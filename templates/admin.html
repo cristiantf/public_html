@@ -1,286 +1,319 @@
 {% extends "base.html" %}
 
 {% block sidebar %}
-<div class="sidebar p-3" style="background: #2c3e50; min-height: 100vh;">
-    <h4 class="text-white text-center">Panel Admin</h4>
-    <hr class="text-white-50">
-    <ul class="nav nav-pills flex-column mb-auto">
-        <li class="nav-item">
-            <a href="{{ url_for('admin_dashboard') }}" class="nav-link text-white active">
-                <i class="bi bi-speedometer2 me-2"></i> Dashboard
-            </a>
-        </li>
-        <li>
-            <a href="{{ url_for('admin_abrir') }}" class="nav-link text-white" onclick="return confirm('¿Estás seguro de que quieres abrir la puerta remotamente?');">
-                <i class="bi bi-unlock-fill me-2"></i> Abrir Puerta
-            </a>
-        </li>
-        <li class="nav-item mt-4">
-            <h6 class="text-white-50 text-uppercase small px-3">Herramientas</h6>
-        </li>
-        <li>
-            <a class="nav-link text-white" data-bs-toggle="collapse" href="#collapseNuevoDocente" role="button">
-                <i class="bi bi-person-plus-fill me-2"></i> Nuevo Docente
-            </a>
-        </li>
-        <li>
-            <a class="nav-link text-white" data-bs-toggle="collapse" href="#collapseReportes" role="button">
-                <i class="bi bi-file-earmark-excel-fill me-2"></i> Reportes
-            </a>
-        </li>
-    </ul>
+<div class="py-3 h-100 d-flex flex-column">
+    <!-- Encabezado de la Barra Lateral -->
+    <div class="text-center mb-4 pt-3">
+        <div class="bg-primary d-inline-block p-2 rounded-4 mb-2 shadow">
+            <i class="bi bi-shield-lock-fill fs-2 text-white"></i>
+        </div>
+        <h6 class="text-white fw-bold mt-1 small">SISTEMA ISTAE</h6>
+    </div>
+    
+    <!-- Menú de Navegación -->
+    <div class="nav flex-column flex-grow-1">
+        <div class="section-label">General</div>
+        <a href="{{ url_for('admin_dashboard') }}" class="nav-link {% if request.endpoint == 'admin_dashboard' %}active{% endif %}">
+            <i class="bi bi-grid-fill me-3"></i> Dashboard
+        </a>
+        
+        <div class="section-label">Gestión Docente</div>
+        <a href="#collapseNuevo" class="nav-link" data-bs-toggle="collapse" role="button">
+            <i class="bi bi-person-plus-fill me-3"></i> Nuevo Registro
+        </a>
+        <a href="#collapseReportes" class="nav-link" data-bs-toggle="collapse" role="button">
+            <i class="bi bi-file-earmark-spreadsheet-fill me-3"></i> Reportes Excel
+        </a>
+        
+        <div class="section-label">Control de Acceso</div>
+        <a href="#" class="nav-link text-warning" data-bs-toggle="modal" data-bs-target="#modalApertura">
+            <i class="bi bi-unlock-fill me-3"></i> Apertura Forzada
+        </a>
+    </div>
+
+    <!-- Botón de Salida Permanente -->
+    <div class="mt-auto p-3">
+        <hr class="text-white-50">
+        <a href="{{ url_for('logout') }}" class="btn btn-outline-danger w-100 rounded-pill py-2 small fw-bold">
+            <i class="bi bi-box-arrow-right me-2"></i>Cerrar Sesión
+        </a>
+    </div>
 </div>
 {% endblock %}
 
 {% block content %}
-<style>
-    .mono { font-family: 'Courier New', Courier, monospace; letter-spacing: -0.5px; }
-    .extra-small { font-size: 0.72rem; }
-    .table-responsive { max-height: 500px; }
-    .sticky-top { z-index: 10; }
-    #live-indicator { transition: opacity 0.3s ease; }
-</style>
+<!-- MODAL DE SEGURIDAD -->
+<div class="modal fade" id="modalApertura" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content rounded-4 border-0 shadow-lg">
+            <div class="modal-header bg-danger text-white border-0 py-3">
+                <h5 class="modal-title fw-bold"><i class="bi bi-shield-lock me-2"></i>Seguridad del Sistema</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body text-center p-5">
+                <div class="bg-danger bg-opacity-10 d-inline-block p-4 rounded-circle mb-4">
+                    <i class="bi bi-exclamation-triangle-fill text-danger fs-1"></i>
+                </div>
+                <h4 class="fw-bold">¿Abrir puerta físicamente?</h4>
+                <p class="text-muted">Esta acción activará el relé en el NodeMCU. Quedará un registro de auditoría bajo su nombre de administrador.</p>
+            </div>
+            <div class="modal-footer border-0 bg-light p-3">
+                <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">Cancelar</button>
+                <a href="{{ url_for('admin_abrir') }}" class="btn btn-danger rounded-pill px-5 fw-bold shadow">CONFIRMAR ACCIÓN</a>
+            </div>
+        </div>
+    </div>
+</div>
 
-<div class="collapse mb-4" id="collapseNuevoDocente">
-    <div class="card shadow border-0">
-        <div class="card-header bg-success text-white fw-bold">➕ Registrar Nuevo Docente</div>
-        <div class="card-body">
-            <form action="{{ url_for('crear_docente') }}" method="POST">
-                <div class="row g-3">
-                    <div class="col-md-6">
-                        <label class="form-label">Nombre Completo</label>
-                        <input type="text" name="nombre" class="form-control shadow-none" required placeholder="Ej. Juan Pérez">
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label">ID Biométrico</label>
-                        <input type="number" name="bio_id" class="form-control shadow-none" required placeholder="Ej. 101">
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label">Usuario Login</label>
-                        <input type="text" name="username" class="form-control shadow-none" required>
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label">Contraseña</label>
-                        <input type="password" name="password" class="form-control shadow-none" required>
-                    </div>
-                    <div class="col-12 mt-3">
-                        <div class="d-flex justify-content-between align-items-center p-3 border rounded bg-light">
-                            <div>
-                                <label class="fw-bold mb-0" for="permisoNew"><i class="bi bi-key-fill text-warning me-2"></i>Permiso de Puerta</label>
-                                <div class="small text-muted">Habilita la apertura física mediante huella dactilar.</div>
-                            </div>
-                            <div class="form-check form-switch">
-                                <input class="form-check-input shadow-none" type="checkbox" name="acceso_puerta" id="permisoNew" style="transform: scale(1.3); cursor: pointer;">
+<div class="container-fluid">
+    <!-- KPIs -->
+    <div class="row g-3 mb-4 fade-in">
+        <div class="col-6 col-md-3">
+            <div class="card border-0 shadow-sm p-3 text-center h-100 border-start border-primary border-4">
+                <div class="small text-muted fw-bold mb-1 text-uppercase" style="font-size: 0.6rem;">Total Docentes</div>
+                <h3 class="fw-bold mb-0 text-dark">{{ docentes|length }}</h3>
+                <div class="extra-small text-primary fw-bold">Registrados</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card border-0 shadow-sm p-3 text-center h-100 border-start border-success border-4">
+                <div class="small text-muted fw-bold mb-1 text-uppercase" style="font-size: 0.6rem;">Estado Hardware</div>
+                <h3 class="fw-bold mb-0 text-success"><i class="bi bi-wifi"></i></h3>
+                <div class="extra-small text-muted">En línea</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card border-0 shadow-sm p-3 text-center h-100 border-start border-info border-4">
+                <div class="small text-muted fw-bold mb-1 text-uppercase" style="font-size: 0.6rem;">Hoy</div>
+                <h3 class="fw-bold mb-0 text-info" id="count-hoy">--</h3>
+                <div class="extra-small text-muted">Marcaciones</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card border-0 shadow-sm p-3 text-center h-100 border-start border-warning border-4">
+                <div class="small text-muted fw-bold mb-1 text-uppercase" style="font-size: 0.6rem;">Cola</div>
+                <h3 class="fw-bold mb-0 text-dark">0</h3>
+                <div class="extra-small text-muted">Comandos</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- SECCIONES COLAPSABLES -->
+    <div class="collapse mb-4" id="collapseNuevo">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-success text-white fw-bold py-3">➕ Registrar Nuevo Docente</div>
+            <div class="card-body p-4 bg-white">
+                <form action="{{ url_for('crear_docente') }}" method="POST">
+                    <div class="row g-3">
+                        <div class="col-md-6"><label class="form-label small fw-bold">Nombre Completo</label><input type="text" name="nombre" class="form-control" required placeholder="Ej. Ing. Cristian"></div>
+                        <div class="col-md-6"><label class="form-label small fw-bold">ID Biométrico</label><input type="number" name="bio_id" class="form-control" required placeholder="101"></div>
+                        <div class="col-md-6"><label class="form-label small fw-bold">Usuario</label><input type="text" name="username" class="form-control" required></div>
+                        <div class="col-md-6"><label class="form-label small fw-bold">Contraseña</label><input type="password" name="password" class="form-control" required></div>
+                        <div class="col-12 mt-3">
+                            <div class="form-check form-switch p-3 border rounded-4 bg-light d-flex justify-content-between align-items-center">
+                                <label class="form-check-label fw-bold mb-0" for="sw_p">Habilitar apertura física por huella</label>
+                                <input class="form-check-input ms-0" type="checkbox" name="acceso_puerta" id="sw_p" style="transform: scale(1.3);">
                             </div>
                         </div>
                     </div>
-                </div>
-                <button class="btn btn-success w-100 mt-4 py-2 fw-bold shadow-sm">Guardar Docente en Base de Datos</button>
-            </form>
-        </div>
-    </div>
-</div>
-
-<div class="collapse mb-4" id="collapseReportes">
-    <div class="card shadow border-0">
-        <div class="card-header bg-dark text-white fw-bold">📊 Generador de Asistencia (Excel)</div>
-        <div class="card-body">
-            <form action="{{ url_for('descargar_reporte_matricial') }}" method="GET">
-                <div class="row g-3">
-                    <div class="col-md-4"><label class="form-label">Desde:</label><input type="date" name="fecha_inicio" class="form-control shadow-none"></div>
-                    <div class="col-md-4"><label class="form-label">Hasta:</label><input type="date" name="fecha_fin" class="form-control shadow-none"></div>
-                    <div class="col-md-4">
-                        <label class="form-label">Docente:</label>
-                        <select name="docente_id" class="form-select shadow-none">
-                            <option value="todos">Todos los docentes</option>
-                            {% for d in docentes %}<option value="{{ d.biometric_id }}">{{ d.nombre }}</option>{% endfor %}
-                        </select>
-                    </div>
-                </div>
-                <button class="btn btn-primary w-100 mt-3 shadow-sm"><i class="bi bi-download me-2"></i>Descargar Reporte Doble Jornada</button>
-            </form>
-        </div>
-    </div>
-</div>
-
-<div class="row g-4">
-    <div class="col-lg-7">
-        <div class="card shadow-sm border-0 mb-4">
-            <div class="card-header bg-info text-white d-flex justify-content-between align-items-center py-3">
-                <span class="fw-bold"><i class="bi bi-broadcast-pin me-2"></i> MONITOR DE ASISTENCIA EN TIEMPO REAL</span>
-                <div class="spinner-grow spinner-grow-sm text-light" id="live-indicator" style="opacity: 0.2;"></div>
+                    <button class="btn btn-success w-100 mt-4 py-2 fw-bold rounded-pill shadow">GUARDAR DOCENTE</button>
+                </form>
             </div>
-            <div class="card-body p-0">
+        </div>
+    </div>
+
+    <div class="collapse mb-4" id="collapseReportes">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-dark text-white fw-bold py-3">📊 Generar Reporte de Asistencia (Excel)</div>
+            <div class="card-body p-4 bg-white">
+                <form action="{{ url_for('descargar_reporte_matricial') }}" method="GET">
+                    <div class="row g-3">
+                        <div class="col-md-4"><label class="form-label small fw-bold">Fecha Inicio</label><input type="date" name="fecha_inicio" class="form-control"></div>
+                        <div class="col-md-4"><label class="form-label small fw-bold">Fecha Fin</label><input type="date" name="fecha_fin" class="form-control"></div>
+                        <div class="col-md-4"><label class="form-label small fw-bold">Docente</label>
+                            <select name="docente_id" class="form-select">
+                                <option value="todos">Todos</option>
+                                {% for d in docentes %}<option value="{{ d.biometric_id }}">{{ d.nombre }}</option>{% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary w-100 mt-4 py-2 fw-bold rounded-pill shadow">DESCARGAR REPORTE MATRICIAL</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- CONTENIDO PRINCIPAL -->
+    <div class="row g-4">
+        <!-- MONITOR EN VIVO -->
+        <div class="col-lg-8">
+            <div class="card border-0 shadow-sm h-100 overflow-hidden">
+                <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0 fw-bold"><i class="bi bi-broadcast text-primary me-2"></i>Monitor en Tiempo Real</h6>
+                    <span class="badge bg-primary bg-opacity-10 text-primary px-3 rounded-pill" id="live-indicator" style="opacity: 0.3;">
+                        <i class="bi bi-record-fill me-1 blink"></i> Sincronizando
+                    </span>
+                </div>
                 <div class="table-responsive">
-                    <table class="table table-hover mb-0">
-                        <thead class="table-light sticky-top shadow-sm">
-                            <tr>
-                                <th class="ps-3">Fecha y Hora</th>
-                                <th>Usuario</th>
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="bg-light">
+                            <tr class="small text-muted text-uppercase">
+                                <th class="ps-4">Hora / Fecha</th>
+                                <th>Docente</th>
                                 <th>Evento</th>
-                                <th class="text-center">Origen</th>
+                                <th class="text-center">Vía</th>
                             </tr>
                         </thead>
-                        <tbody id="live-logs-body" class="align-middle">
-                            </tbody>
+                        <tbody id="live-logs-body"></tbody>
                     </table>
                 </div>
             </div>
         </div>
-    </div>
 
-    <div class="col-lg-5">
-        <div class="card shadow-sm border-0 mb-4">
-            <div class="card-header bg-white border-bottom py-3">
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <span class="fw-bold text-primary"><i class="bi bi-people-fill me-2"></i> Gestión de Personal</span>
-                    <span class="badge bg-primary rounded-pill">{{ docentes|length }}</span>
+        <!-- GESTIÓN DE DOCENTES CON FILTRO MEJORADO -->
+        <div class="col-lg-4">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-header bg-white py-3 border-bottom">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h6 class="mb-0 fw-bold"><i class="bi bi-people-fill me-2 text-primary"></i>Personal</h6>
+                        <span class="badge bg-light text-primary border rounded-pill fw-bold" id="badge-contador-docentes">{{ docentes|length }}</span>
+                    </div>
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text bg-light border-0"><i class="bi bi-search text-muted"></i></span>
+                        <input type="text" id="busDocente" class="form-control bg-light border-0 shadow-none" placeholder="Nombre o ID del docente...">
+                    </div>
                 </div>
-                <div class="input-group input-group-sm">
-                    <span class="input-group-text bg-light border-end-0"><i class="bi bi-search"></i></span>
-                    <input type="text" id="busquedaDocente" class="form-control bg-light border-start-0 shadow-none" placeholder="Buscar docente o ID...">
-                </div>
-            </div>
-            <div class="card-body p-0">
-                <div class="table-responsive" style="max-height: 420px;">
-                    <table class="table table-hover mb-0 align-middle" id="tablaDocentes">
-                        <tbody>
-                            {% for d in docentes %}
-                            <tr>
-                                <td class="ps-3">
-                                    <div class="fw-bold text-dark small">{{ d.nombre }}</div>
-                                    <code class="text-primary extra-small">ID: {{ d.biometric_id }}</code>
-                                </td>
-                                <td class="text-center">
-                                    <div class="form-check form-switch d-flex justify-content-center">
-                                        <input class="form-check-input shadow-none" type="checkbox" role="switch" 
-                                               onchange="togglePermiso('{{ d.id }}', this)" 
-                                               style="cursor: pointer;"
-                                               {% if d.acceso_puerta == 1 %}checked{% endif %}>
-                                    </div>
-                                </td>
-                                <td class="text-end pe-3">
-                                    <div class="btn-group">
-                                        <a href="{{ url_for('editar_docente', id=d.id) }}" class="btn btn-link btn-sm text-secondary p-1"><i class="bi bi-pencil-square"></i></a>
-                                        <a href="{{ url_for('eliminar_docente', id=d.id) }}" class="btn btn-link btn-sm text-danger p-1" onclick="return confirm('¿Eliminar registro?')"><i class="bi bi-trash"></i></a>
-                                    </div>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+                
+                <!-- Contenedor del Listado -->
+                <div class="list-group list-group-flush rounded-bottom-4 overflow-hidden" id="listaDocentes">
+                    {% for d in docentes %}
+                    <div class="list-group-item d-flex justify-content-between align-items-center py-3 docente-row">
+                        <div class="docente-info">
+                            <div class="fw-bold small text-dark name-field">{{ d.nombre }}</div>
+                            <code class="text-muted extra-small id-field">ID BIO: {{ d.biometric_id }}</code>
+                        </div>
+                        <div class="d-flex align-items-center">
+                            <div class="form-check form-switch me-2" title="Permiso de Puerta">
+                                <input class="form-check-input" type="checkbox" onchange="togglePermiso('{{d.id}}', this)" {% if d.acceso_puerta == 1 %}checked{% endif %}>
+                            </div>
+                            <div class="btn-group">
+                                <a href="{{ url_for('editar_docente', id=d.id) }}" class="btn btn-sm btn-light border" title="Editar"><i class="bi bi-pencil text-primary"></i></a>
+                                <a href="{{ url_for('eliminar_docente', id=d.id) }}" class="btn btn-sm btn-light border text-danger" onclick="return confirm('¿Seguro de eliminar este docente?')" title="Eliminar"><i class="bi bi-trash"></i></a>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                    
+                    <!-- Mensaje sin resultados -->
+                    <div id="no-results" class="p-5 text-center d-none">
+                        <i class="bi bi-person-x fs-2 text-muted mb-2 d-block"></i>
+                        <span class="text-muted small fw-bold">No se encontraron docentes.</span>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 </div>
 
-
-
 <script>
-    // 1. FUNCIÓN QUIRÚRGICA: Devuelve una cadena de texto "DD/MM/YYYY HH:MM:SS"
-    function normalizarFechaHora(stringBD) {
-        try {
-            if (!stringBD) return "Fecha inválida";
-            
-            // new Date() es sorprendentemente robusto y puede parsear muchos formatos,
-            // incluyendo "YYYY-MM-DD HH:MM:SS" y el formato RFC 2822 que parece estar llegando.
-            const d = new Date(stringBD);
-
-            // Si la fecha parseada no es válida, devolvemos un texto de error.
-            if (isNaN(d.getTime())) {
-                console.warn("No se pudo parsear la fecha:", stringBD);
-                return "Fecha-hora ilegible";
-            }
-
-            const pad = (num) => num.toString().padStart(2, '0');
-
-            const dia = pad(d.getDate());
-            const mes = pad(d.getMonth() + 1); // getMonth() es 0-indexado
-            const anio = d.getFullYear();
-
-            const hora = pad(d.getHours());
-            const min = pad(d.getMinutes());
-            const seg = pad(d.getSeconds());
-
-            return `${dia}/${mes}/${anio} ${hora}:${min}:${seg}`;
-
-        } catch (e) {
-            console.warn("Error excepcional parseando fecha:", stringBD, e);
-            return "Fecha con error";
-        }
-    }
-
-    // 2. MONITOR EN VIVO (AJAX)
+    /**
+     * Sincronización de Monitor y KPIs
+     */
     async function actualizarMonitor() {
-        const logsBody = document.getElementById('live-logs-body');
-        const indicator = document.getElementById('live-indicator');
+        const body = document.getElementById('live-logs-body');
+        const ind = document.getElementById('live-indicator');
+        const hoyDisplay = document.getElementById('count-hoy');
         
         try {
-            indicator.style.opacity = '1';
+            ind.style.opacity = '1';
             const res = await fetch('/api/logs');
             const logs = await res.json();
             
-            logsBody.innerHTML = ''; 
-            
-            logs.forEach(log => {
-                const fechaHoraFormateada = normalizarFechaHora(log.fecha || "");
-                
-                let bClass = "secondary";
-                if (log.tipo_evento === "Asistencia + puerta") bClass = "success";
-                if (log.tipo_evento === "Asistencia") bClass = "primary";
-                if (log.tipo_evento === "Apertura Remota") bClass = "danger";
+            const hoy = new Date().toISOString().split('T')[0];
+            const logsHoy = logs.filter(l => l.fecha.includes(hoy)).length;
+            hoyDisplay.innerText = logsHoy;
 
-                let icon = "bi-globe"; 
-                if (log.origen === "Huella") icon = "bi-cpu text-info";
-                if (log.origen === "Asistencia remota") icon = "bi-laptop text-primary";
+            body.innerHTML = logs.map(l => {
+                const [f, h] = l.fecha.split(' ');
+                const icon = l.origen === "Huella" ? "bi-cpu text-info" : "bi-laptop text-primary";
+                let badge = "bg-primary";
+                if(l.tipo_evento.toLowerCase().includes("puerta")) badge = "bg-success";
+                if(l.tipo_evento.toLowerCase().includes("remota")) badge = "bg-danger";
 
-                let row = `
-                    <tr>
-                        <td class="ps-3 mono" style="font-size: 0.9rem;">${fechaHoraFormateada}</td>
-                        <td><div class="fw-semibold small">${log.nombre || 'ID: ' + log.usuario_id}</div></td>
-                        <td><span class="badge bg-${bClass} bg-opacity-10 text-${bClass} border border-${bClass} extra-small">${log.tipo_evento}</span></td>
-                        <td class="text-center"><div class="extra-small text-muted"><i class="bi ${icon} d-block"></i> ${log.origen}</div></td>
-                    </tr>`;
-                logsBody.insertAdjacentHTML('beforeend', row);
-            });
+                return `<tr>
+                    <td class="ps-4 mono small"><b>${h}</b><br><span class="text-muted extra-small">${f}</span></td>
+                    <td class="small fw-bold text-dark">${l.nombre}</td>
+                    <td><span class="badge ${badge} bg-opacity-10 text-dark border-0 px-3 extra-small fw-bold shadow-sm">${l.tipo_evento}</span></td>
+                    <td class="text-center"><i class="bi ${icon} fs-5" title="${l.origen}"></i></td>
+                </tr>`;
+            }).join('');
         } catch (e) {
-            console.error("Error monitor:", e);
+            console.error("Monitor Error:", e);
         } finally {
-            setTimeout(() => { indicator.style.opacity = '0.2'; }, 600);
+            setTimeout(() => ind.style.opacity = '0.3', 800);
         }
     }
 
-    // 3. BUSCADOR DE DOCENTES
-    document.getElementById('busquedaDocente').addEventListener('keyup', function() {
-        let filter = this.value.toUpperCase();
-        let rows = document.querySelector("#tablaDocentes tbody").rows;
-        for (let i = 0; i < rows.length; i++) {
-            let texto = rows[i].innerText.toUpperCase();
-            rows[i].style.display = texto.includes(filter) ? "" : "none";
+    /**
+     * Filtro de Búsqueda Mejorado
+     */
+    const inputBusqueda = document.getElementById('busDocente');
+    const noResults = document.getElementById('no-results');
+    const badgeContador = document.getElementById('badge-contador-docentes');
+
+    inputBusqueda.addEventListener('keyup', function() {
+        const query = this.value.toLowerCase().trim();
+        const rows = document.querySelectorAll('.docente-row');
+        let countVisible = 0;
+
+        rows.forEach(row => {
+            const nombre = row.querySelector('.name-field').innerText.toLowerCase();
+            const idBio = row.querySelector('.id-field').innerText.toLowerCase();
+            
+            if (nombre.includes(query) || idBio.includes(query)) {
+                row.style.setProperty('display', 'flex', 'important');
+                countVisible++;
+            } else {
+                row.style.setProperty('display', 'none', 'important');
+            }
+        });
+
+        // Actualizar contador y estado vacío
+        badgeContador.innerText = countVisible;
+        if (countVisible === 0) {
+            noResults.classList.remove('d-none');
+        } else {
+            noResults.classList.add('d-none');
         }
     });
 
-    // 4. TOGGLE PERMISOS
-    async function togglePermiso(id, checkbox) {
+    /**
+     * Actualización rápida de permisos
+     */
+    async function togglePermiso(id, cb) {
         try {
-            const res = await fetch(`/toggle_permiso/${id}`, {
+            await fetch(`/toggle_permiso/${id}`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ estado: checkbox.checked })
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({estado: cb.checked})
             });
-            const data = await res.json();
-            if(!data.success) {
-                alert("Error al actualizar.");
-                checkbox.checked = !checkbox.checked;
-            }
-        } catch (e) {
-            alert("Error de conexión.");
-            checkbox.checked = !checkbox.checked;
+        } catch(e) {
+            cb.checked = !cb.checked;
         }
     }
 
-    setInterval(actualizarMonitor, 3000);
+    setInterval(actualizarMonitor, 3500);
     actualizarMonitor();
 </script>
+
+<style>
+    .blink { animation: blinker 1.5s linear infinite; }
+    @keyframes blinker { 50% { opacity: 0; } }
+    .mono { font-family: 'JetBrains Mono', 'Fira Code', monospace; letter-spacing: 0.5px; }
+    .extra-small { font-size: 0.7rem; }
+    .docente-row { transition: all 0.2s ease; border-left: 3px solid transparent; }
+    .docente-row:hover { background: #f8fafc !important; border-left: 3px solid #0d6efd; }
+    .fade-in { animation: fadeIn 0.5s ease-out; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+</style>
 {% endblock %}
