@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+
+{% block sidebar %}
+{% endblock %}
+
+{% block content %}
+<style>
+    .main-content { margin-left: 0 !important; }
+    
+    /* Animación y Estilos de Tarjetas */
+    .action-card {
+        transition: all 0.3s ease;
+        border: none;
+        cursor: pointer;
+        position: relative;
+        overflow: hidden;
+    }
+    .action-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 20px rgba(0,0,0,0.15)!important;
+    }
+    
+    /* Estado Deshabilitado (Sin Permiso) */
+    .card-disabled {
+        background-color: #f8f9fa;
+        border-color: #dee2e6;
+        cursor: not-allowed;
+        opacity: 0.7;
+    }
+    .card-disabled .card-body { opacity: 0.5; }
+    
+    /* Icono Grande */
+    .icon-big { font-size: 3.5rem; transition: transform 0.3s; }
+    .action-card:hover .icon-big { transform: scale(1.1); }
+    
+    .mono { font-family: 'Courier New', Courier, monospace; }
+</style>
+
+<div class="container py-3">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="fw-bold text-dark mb-0">Hola, {{ current_user.nombre.split(' ')[0] }}</h2>
+            <p class="text-muted">Panel de Gestión Docente - ISTAE</p>
+        </div>
+        <div class="text-end d-none d-md-block">
+            <span class="badge bg-white text-dark border shadow-sm p-2">
+                <i class="bi bi-clock me-2"></i>{{ current_time_display }}
+            </span>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-md-6">
+            {% if current_user.acceso_puerta == 1 %}
+                <a href="{{ url_for('docente_abrir') }}" class="text-decoration-none" onclick="activarCarga(this)">
+                    <div class="card shadow-sm h-100 action-card border-start border-5 border-danger">
+                        <div class="card-body text-center p-5">
+                            <div id="icon-container">
+                                <i class="bi bi-unlock-fill text-danger icon-big mb-3 d-block"></i>
+                            </div>
+                            <h4 class="fw-bold text-dark">Abrir Puerta</h4>
+                            <p class="text-muted small mb-0">Acceso remoto a la cerradura física</p>
+                        </div>
+                    </div>
+                </a>
+            {% else %}
+                <div class="card shadow-sm h-100 card-disabled border-start border-5 border-secondary">
+                    <div class="card-body text-center p-5">
+                        <i class="bi bi-lock-fill text-secondary icon-big mb-3 d-block"></i>
+                        <h4 class="fw-bold text-secondary">Acceso Restringido</h4>
+                        <p class="text-muted small mb-0">No posees permisos de apertura remota.</p>
+                    </div>
+                </div>
+            {% endif %}
+        </div>
+        
+        <div class="col-md-6">
+            <a href="{{ url_for('docente_marcar') }}" class="text-decoration-none">
+                <div class="card shadow-sm h-100 action-card border-start border-5 border-primary">
+                    <div class="card-body text-center p-5">
+                        <i class="bi bi-fingerprint text-primary icon-big mb-3 d-block"></i>
+                        <h4 class="fw-bold text-dark">Marcar Asistencia</h4>
+                        <p class="text-muted small mb-0">Registrar ingreso/salida vía web</p>
+                    </div>
+                </div>
+            </a>
+        </div>
+    </div>
+
+    <div class="card shadow-sm border-0 mt-5">
+        <div class="card-header bg-white py-3 border-bottom">
+            <h5 class="mb-0 fw-bold text-primary"><i class="bi bi-clock-history me-2"></i>Mis Últimos Movimientos</h5>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="ps-4">Fecha y Hora (Literal)</th>
+                            <th>Tipo de Evento</th>
+                            <th>Origen del Registro</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for log in logs %}
+                        <tr>
+                            <td class="ps-4 mono fw-bold text-primary">{{ log.fecha }}</td>
+                            <td>
+                                {% if log.tipo_evento == "Asistencia + puerta" %}
+                                    <span class="badge bg-success bg-opacity-10 text-success border border-success px-3">Asistencia + puerta</span>
+                                {% elif log.tipo_evento == "Asistencia" %}
+                                    <span class="badge bg-primary bg-opacity-10 text-primary border border-primary px-3">Asistencia</span>
+                                {% elif log.tipo_evento == "Apertura Remota" %}
+                                    <span class="badge bg-danger bg-opacity-10 text-danger border border-danger px-3">Apertura Remota</span>
+                                {% else %}
+                                    <span class="badge bg-secondary px-3">{{ log.tipo_evento }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if log.origen == "Huella" %}
+                                    <i class="bi bi-cpu text-info me-1"></i>
+                                {% elif log.origen == "Asistencia remota" %}
+                                    <i class="bi bi-laptop text-primary me-1"></i>
+                                {% endif %}
+                                {{ log.origen }}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="3" class="text-center py-4 text-muted">Aún no registras movimientos hoy.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+
+<script>
+    /**
+     * Previene doble clic y muestra estado de carga en la apertura
+     */
+    function activarCarga(elemento) {
+        elemento.style.pointerEvents = 'none';
+        const contenedor = elemento.querySelector('#icon-container');
+        contenedor.innerHTML = `
+            <div class="spinner-border text-danger mb-3" style="width: 3rem; height: 3rem;" role="status">
+                <span class="visually-hidden">Procesando...</span>
+            </div>
+        `;
+    }
+</script>
+{% endblock %}

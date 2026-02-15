@@ -1,0 +1,287 @@
+{% extends "base.html" %}
+
+{% block sidebar %}
+<div class="sidebar p-3" style="background: #2c3e50; min-height: 100vh;">
+    <h4 class="text-white text-center">Panel Admin</h4>
+    <hr class="text-white-50">
+    <ul class="nav nav-pills flex-column mb-auto">
+        <li class="nav-item">
+            <a href="{{ url_for('admin_dashboard') }}" class="nav-link text-white active">
+                <i class="bi bi-speedometer2 me-2"></i> Dashboard
+            </a>
+        </li>
+        <li>
+            <a href="{{ url_for('admin_abrir') }}" class="nav-link text-white" onclick="return confirm('¿Estás seguro de que quieres abrir la puerta remotamente?');">
+                <i class="bi bi-unlock-fill me-2"></i> Abrir Puerta
+            </a>
+        </li>
+        <li class="nav-item mt-4">
+            <h6 class="text-white-50 text-uppercase small px-3">Herramientas</h6>
+        </li>
+        <li>
+            <a class="nav-link text-white" data-bs-toggle="collapse" href="#collapseNuevoDocente" role="button">
+                <i class="bi bi-person-plus-fill me-2"></i> Nuevo Docente
+            </a>
+        </li>
+        <li>
+            <a class="nav-link text-white" data-bs-toggle="collapse" href="#collapseReportes" role="button">
+                <i class="bi bi-file-earmark-excel-fill me-2"></i> Reportes
+            </a>
+        </li>
+    </ul>
+</div>
+{% endblock %}
+
+{% block content %}
+<style>
+    .mono { font-family: 'Courier New', Courier, monospace; letter-spacing: -0.5px; }
+    .extra-small { font-size: 0.72rem; }
+    .table-responsive { max-height: 500px; }
+    .sticky-top { z-index: 10; }
+    #live-indicator { transition: opacity 0.3s ease; }
+</style>
+
+<div class="collapse mb-4" id="collapseNuevoDocente">
+    <div class="card shadow border-0">
+        <div class="card-header bg-success text-white fw-bold">➕ Registrar Nuevo Docente</div>
+        <div class="card-body">
+            <form action="{{ url_for('crear_docente') }}" method="POST">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Nombre Completo</label>
+                        <input type="text" name="nombre" class="form-control shadow-none" required placeholder="Ej. Juan Pérez">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">ID Biométrico</label>
+                        <input type="number" name="bio_id" class="form-control shadow-none" required placeholder="Ej. 101">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Usuario Login</label>
+                        <input type="text" name="username" class="form-control shadow-none" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Contraseña</label>
+                        <input type="password" name="password" class="form-control shadow-none" required>
+                    </div>
+                    <div class="col-12 mt-3">
+                        <div class="d-flex justify-content-between align-items-center p-3 border rounded bg-light">
+                            <div>
+                                <label class="fw-bold mb-0" for="permisoNew"><i class="bi bi-key-fill text-warning me-2"></i>Permiso de Puerta</label>
+                                <div class="small text-muted">Habilita la apertura física mediante huella dactilar.</div>
+                            </div>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input shadow-none" type="checkbox" name="acceso_puerta" id="permisoNew" style="transform: scale(1.3); cursor: pointer;">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <button class="btn btn-success w-100 mt-4 py-2 fw-bold shadow-sm">Guardar Docente en Base de Datos</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="collapse mb-4" id="collapseReportes">
+    <div class="card shadow border-0">
+        <div class="card-header bg-dark text-white fw-bold">📊 Generador de Asistencia (Excel)</div>
+        <div class="card-body">
+            <form action="{{ url_for('descargar_reporte_matricial') }}" method="GET">
+                <div class="row g-3">
+                    <div class="col-md-4"><label class="form-label">Desde:</label><input type="date" name="fecha_inicio" class="form-control shadow-none"></div>
+                    <div class="col-md-4"><label class="form-label">Hasta:</label><input type="date" name="fecha_fin" class="form-control shadow-none"></div>
+                    <div class="col-md-4">
+                        <label class="form-label">Docente:</label>
+                        <select name="docente_id" class="form-select shadow-none">
+                            <option value="todos">Todos los docentes</option>
+                            {% for d in docentes %}<option value="{{ d.biometric_id }}">{{ d.nombre }}</option>{% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <button class="btn btn-primary w-100 mt-3 shadow-sm"><i class="bi bi-download me-2"></i>Descargar Reporte Doble Jornada</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-7">
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-header bg-info text-white d-flex justify-content-between align-items-center py-3">
+                <span class="fw-bold"><i class="bi bi-broadcast-pin me-2"></i> MONITOR DE ASISTENCIA EN TIEMPO REAL</span>
+                <div class="spinner-grow spinner-grow-sm text-light" id="live-indicator" style="opacity: 0.2;"></div>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light sticky-top shadow-sm">
+                            <tr>
+                                <th class="ps-3">Hora y Fecha</th>
+                                <th>Usuario</th>
+                                <th>Evento</th>
+                                <th class="text-center">Origen</th>
+                            </tr>
+                        </thead>
+                        <tbody id="live-logs-body" class="align-middle">
+                            </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-5">
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-header bg-white border-bottom py-3">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="fw-bold text-primary"><i class="bi bi-people-fill me-2"></i> Gestión de Personal</span>
+                    <span class="badge bg-primary rounded-pill">{{ docentes|length }}</span>
+                </div>
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-light border-end-0"><i class="bi bi-search"></i></span>
+                    <input type="text" id="busquedaDocente" class="form-control bg-light border-start-0 shadow-none" placeholder="Buscar docente o ID...">
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive" style="max-height: 420px;">
+                    <table class="table table-hover mb-0 align-middle" id="tablaDocentes">
+                        <tbody>
+                            {% for d in docentes %}
+                            <tr>
+                                <td class="ps-3">
+                                    <div class="fw-bold text-dark small">{{ d.nombre }}</div>
+                                    <code class="text-primary extra-small">ID: {{ d.biometric_id }}</code>
+                                </td>
+                                <td class="text-center">
+                                    <div class="form-check form-switch d-flex justify-content-center">
+                                        <input class="form-check-input shadow-none" type="checkbox" role="switch" 
+                                               onchange="togglePermiso('{{ d.id }}', this)" 
+                                               style="cursor: pointer;"
+                                               {% if d.acceso_puerta == 1 %}checked{% endif %}>
+                                    </div>
+                                </td>
+                                <td class="text-end pe-3">
+                                    <div class="btn-group">
+                                        <a href="{{ url_for('editar_docente', id=d.id) }}" class="btn btn-link btn-sm text-secondary p-1"><i class="bi bi-pencil-square"></i></a>
+                                        <a href="{{ url_for('eliminar_docente', id=d.id) }}" class="btn btn-link btn-sm text-danger p-1" onclick="return confirm('¿Eliminar registro?')"><i class="bi bi-trash"></i></a>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+
+<script>
+    // 1. FUNCIÓN QUIRÚRGICA: Muestra texto literal de la BD
+    function normalizarFechaHora(stringBD) {
+        try {
+            if (!stringBD || typeof stringBD !== "string") {
+                return { hora: "--:--:--", fecha: "Sin fecha" };
+            }
+
+            // 🔧 Normaliza formato para evitar errores raros
+            const limpio = stringBD.replace("T", " ").trim();
+
+            const partes = limpio.split(' ');
+            const rawFecha = partes[0] || "0000-00-00";
+            const rawHora = partes[1] || "--:--:--";
+
+            const f = rawFecha.split('-');
+
+            if (f.length !== 3) {
+                return { hora: rawHora, fecha: rawFecha };
+            }
+
+            let anio = f[0] === "0026" ? "2026" : f[0]; // Tu parche visual intacto
+            let fechaLatina = `${f[2]}/${f[1]}/${anio}`;
+
+            return { hora: rawHora, fecha: fechaLatina };
+
+        } catch (e) {
+            console.warn("Fecha inválida:", stringBD);
+            return { hora: "--:--:--", fecha: "Error fecha" };
+        }
+    }
+
+    // 2. MONITOR EN VIVO (AJAX)
+    async function actualizarMonitor() {
+        const logsBody = document.getElementById('live-logs-body');
+        const indicator = document.getElementById('live-indicator');
+        
+        try {
+            indicator.style.opacity = '1';
+            const res = await fetch('/api/logs');
+            const logs = await res.json();
+            
+            logsBody.innerHTML = ''; 
+            
+            logs.forEach(log => {
+                const t = normalizarFechaHora(log.fecha || "");
+                
+                let bClass = "secondary";
+                if (log.tipo_evento === "Asistencia + puerta") bClass = "success";
+                if (log.tipo_evento === "Asistencia") bClass = "primary";
+                if (log.tipo_evento === "Apertura Remota") bClass = "danger";
+
+                let icon = "bi-globe"; 
+                if (log.origen === "Huella") icon = "bi-cpu text-info";
+                if (log.origen === "Asistencia remota") icon = "bi-laptop text-primary";
+
+                let row = `
+                    <tr>
+                        <td class="ps-3">
+                            <div class="fw-bold text-dark mono" style="font-size: 1rem;">${t.hora}</div>
+                            <div class="text-muted extra-small">${t.fecha}</div>
+                        </td>
+                        <td><div class="fw-semibold small">${log.nombre || 'ID: ' + log.usuario_id}</div></td>
+                        <td><span class="badge bg-${bClass} bg-opacity-10 text-${bClass} border border-${bClass} extra-small">${log.tipo_evento}</span></td>
+                        <td class="text-center"><div class="extra-small text-muted"><i class="bi ${icon} d-block"></i> ${log.origen}</div></td>
+                    </tr>`;
+                logsBody.insertAdjacentHTML('beforeend', row);
+            });
+        } catch (e) {
+            console.error("Error monitor:", e);
+        } finally {
+            setTimeout(() => { indicator.style.opacity = '0.2'; }, 600);
+        }
+    }
+
+    // 3. BUSCADOR DE DOCENTES
+    document.getElementById('busquedaDocente').addEventListener('keyup', function() {
+        let filter = this.value.toUpperCase();
+        let rows = document.querySelector("#tablaDocentes tbody").rows;
+        for (let i = 0; i < rows.length; i++) {
+            let texto = rows[i].innerText.toUpperCase();
+            rows[i].style.display = texto.includes(filter) ? "" : "none";
+        }
+    });
+
+    // 4. TOGGLE PERMISOS
+    async function togglePermiso(id, checkbox) {
+        try {
+            const res = await fetch(`/toggle_permiso/${id}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ estado: checkbox.checked })
+            });
+            const data = await res.json();
+            if(!data.success) {
+                alert("Error al actualizar.");
+                checkbox.checked = !checkbox.checked;
+            }
+        } catch (e) {
+            alert("Error de conexión.");
+            checkbox.checked = !checkbox.checked;
+        }
+    }
+
+    setInterval(actualizarMonitor, 3000);
+    actualizarMonitor();
+</script>
+{% endblock %}
