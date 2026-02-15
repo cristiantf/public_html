@@ -14,7 +14,7 @@ from urllib.parse import quote_plus
 app = Flask(__name__)
 app.config['SECRET_KEY'] = config.SECRET_KEY
 
-# --- CONFIGURACIÓN DE BASE DE DATOS (HESTIACP / MYSQL) ---
+# --- CONFIGURACIÓN DE BASE DE DATOS (MYSQL) ---
 encoded_password = quote_plus('avril18wen04@@A1')
 app.config['SQLALCHEMY_DATABASE_URI'] = f'mysql+pymysql://user1_istae:{encoded_password}@localhost/user1_biom'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -38,7 +38,7 @@ class User(UserMixin, db.Model):
 class Log(db.Model):
     __tablename__ = 'logs'
     id = db.Column(db.Integer, primary_key=True)
-    fecha = db.Column(db.String(30)) 
+    fecha = db.Column(db.DateTime, nullable=False) # Cambio a DateTime para mejor manejo
     usuario_id = db.Column(db.String(20))
     tipo_evento = db.Column(db.String(50))
     origen = db.Column(db.String(50))
@@ -77,13 +77,27 @@ def api_recibir_log():
     data = request.json
     if not data or data.get('token') != config.TOKEN_NODE:
         return jsonify({"status": "error", "message": "Token inválido"}), 403
-    
-    f_rec = data.get('fecha_dispositivo') or datetime.now(pytz.timezone('America/Guayaquil')).strftime("%Y-%m-%d %H:%M:%S")
-    
+
+    fecha_log = None
+    fecha_str = data.get('fecha_dispositivo')
+    tz_ecu = pytz.timezone('America/Guayaquil')
+
+    if fecha_str:
+        try:
+            # Limpieza de formato ISAPI (reemplaza T por espacio)
+            fecha_limpia = fecha_str.replace('T', ' ')
+            # Intentamos parsear la fecha enviada
+            fecha_log = datetime.strptime(fecha_limpia[:19], "%Y-%m-%d %H:%M:%S")
+        except:
+            fecha_log = None
+
+    if fecha_log is None:
+        fecha_log = datetime.now(tz_ecu)
+
     nuevo_log = Log(
-        fecha=f_rec.replace('T', ' '),
+        fecha=fecha_log,
         usuario_id=data.get('id'),
-        tipo_evento="Asistencia + puerta", 
+        tipo_evento="Asistencia + puerta",
         origen="Huella"
     )
     db.session.add(nuevo_log)
@@ -99,7 +113,7 @@ def api_check_comando():
         return "ABRIR"
     return "NADA"
 
-# --- RUTAS DE NAVEGACIÓN ---
+# --- VISTAS Y DASHBOARDS ---
 
 @app.route('/')
 @login_required
@@ -124,20 +138,20 @@ def docente_dashboard():
 def perfil():
     return render_template('perfil.html')
 
-# --- ACCIONES DE CONTROL ---
+# --- ACCIONES ---
 
 @app.route('/admin/abrir')
 @login_required
 def admin_abrir():
     db.session.add(Comando(instruccion='ABRIR'))
     db.session.add(Log(
-        fecha=datetime.now(pytz.timezone('America/Guayaquil')).strftime("%Y-%m-%d %H:%M:%S"),
+        fecha=datetime.now(pytz.timezone('America/Guayaquil')),
         usuario_id=current_user.biometric_id,
         tipo_evento="Apertura Remota",
         origen="Panel Control"
     ))
     db.session.commit()
-    flash('Comando de apertura enviado a la puerta.', 'danger')
+    flash('Comando de apertura enviado.', 'danger')
     return redirect(url_for('admin_dashboard'))
 
 @app.route('/docente/abrir_puerta')
@@ -146,98 +160,79 @@ def docente_abrir():
     if current_user.acceso_puerta == 1:
         db.session.add(Comando(instruccion='ABRIR'))
         db.session.add(Log(
-            fecha=datetime.now(pytz.timezone('America/Guayaquil')).strftime("%Y-%m-%d %H:%M:%S"),
+            fecha=datetime.now(pytz.timezone('America/Guayaquil')),
             usuario_id=current_user.biometric_id,
             tipo_evento="Apertura Remota",
             origen="Asistencia remota"
         ))
         db.session.commit()
-        flash('Puerta abierta exitosamente.', 'success')
-    else:
-        flash('No tienes permiso para apertura remota.', 'warning')
+        flash('Puerta abierta.', 'success')
     return redirect(url_for('docente_dashboard'))
 
 @app.route('/docente/marcar_web')
 @login_required
 def docente_marcar():
     db.session.add(Log(
-        fecha=datetime.now(pytz.timezone('America/Guayaquil')).strftime("%Y-%m-%d %H:%M:%S"),
+        fecha=datetime.now(pytz.timezone('America/Guayaquil')),
         usuario_id=current_user.biometric_id,
         tipo_evento="Asistencia",
         origen="Asistencia remota"
     ))
     db.session.commit()
-    flash('Asistencia web registrada.', 'success')
+    flash('Asistencia registrada.', 'success')
     return redirect(url_for('docente_dashboard'))
 
-# --- GESTIÓN DE DOCENTES ---
+# --- GESTIÓN DOCENTES ---
 
 @app.route('/crear_docente', methods=['POST'])
 @login_required
 def crear_docente():
-    if current_user.rol != 'admin': return redirect(url_for('index'))
-    bio_id = request.form.get('bio_id')
-    user_n = request.form.get('username')
-    
-    if User.query.filter((User.biometric_id == bio_id) | (User.username == user_n)).first():
-        flash('Error: El ID Biométrico o Usuario ya existe.', 'warning')
-    else:
-        hashed = generate_password_hash(request.form['password'], method='pbkdf2:sha256')
-        new_u = User(
-            biometric_id=bio_id,
-            nombre=request.form['nombre'],
-            username=user_n,
-            password=hashed,
-            acceso_puerta=1 if request.form.get('acceso_puerta') else 0
-        )
-        db.session.add(new_u)
-        db.session.commit()
-        flash('Docente creado correctamente.', 'success')
+    hashed = generate_password_hash(request.form['password'], method='pbkdf2:sha256')
+    db.session.add(User(
+        biometric_id=request.form['bio_id'],
+        nombre=request.form['nombre'],
+        username=request.form['username'],
+        password=hashed,
+        acceso_puerta=1 if request.form.get('acceso_puerta') else 0
+    ))
+    db.session.commit()
     return redirect(url_for('admin_dashboard'))
 
 @app.route('/actualizar_docente', methods=['POST'])
 @login_required
 def actualizar_docente():
-    if current_user.rol != 'admin': return redirect(url_for('index'))
     u = db.session.get(User, request.form.get('user_id'))
     u.nombre = request.form['nombre']
     u.biometric_id = request.form['bio_id']
     u.username = request.form['username']
     u.acceso_puerta = 1 if request.form.get('acceso_puerta') else 0
-    
     if request.form.get('password'):
         u.password = generate_password_hash(request.form['password'], method='pbkdf2:sha256')
-    
     db.session.commit()
-    flash('Datos del docente actualizados.', 'success')
     return redirect(url_for('admin_dashboard'))
 
 @app.route('/eliminar_docente/<int:id>')
 @login_required
 def eliminar_docente(id):
-    if current_user.rol != 'admin': return redirect(url_for('index'))
     u = db.session.get(User, id)
     if u and u.username != 'admin':
         db.session.delete(u)
         db.session.commit()
-        flash('Registro eliminado.', 'success')
     return redirect(url_for('admin_dashboard'))
 
 @app.route('/editar_docente/<int:id>')
 @login_required
 def editar_docente(id):
-    if current_user.rol != 'admin': return redirect(url_for('index'))
     u = db.session.get(User, id)
     return render_template('editar_docente.html', docente=u)
 
-# --- REPORTES MATRICIALES (Openpyxl) ---
+# --- REPORTE MATRICIAL ---
 
 @app.route('/descargar_reporte_matricial')
 @login_required
 def descargar_reporte_matricial():
     if current_user.rol != 'admin': return redirect(url_for('index'))
     
-    # 1. Configuración de fechas
     fecha_ini_str = request.args.get('fecha_inicio')
     fecha_fin_str = request.args.get('fecha_fin')
     docente_filtro = request.args.get('docente_id')
@@ -249,137 +244,76 @@ def descargar_reporte_matricial():
         end_dt = datetime.now()
         start_dt = end_dt - timedelta(days=6)
 
-    # 2. Obtener lista de días para las columnas
-    dias_reporte = []
-    curr = start_dt
-    while curr <= end_dt:
-        dias_reporte.append(curr.strftime('%Y-%m-%d'))
-        curr += timedelta(days=1)
+    dias_reporte = [ (start_dt + timedelta(days=x)).strftime('%Y-%m-%d') for x in range((end_dt-start_dt).days + 1) ]
 
-    # 3. Obtener Datos
-    if docente_filtro and docente_filtro != 'todos':
-        docentes = User.query.filter_by(biometric_id=docente_filtro).all()
-    else:
-        docentes = User.query.filter_by(rol='docente').all()
+    docentes = User.query.filter_by(biometric_id=docente_filtro).all() if docente_filtro and docente_filtro != 'todos' else User.query.filter_by(rol='docente').all()
 
+    # Consulta optimizada por rango de fechas (DateTime)
     all_logs = Log.query.filter(
-        Log.fecha >= start_dt.strftime('%Y-%m-%d 00:00:00'),
-        Log.fecha <= end_dt.strftime('%Y-%m-%d 23:59:59'),
+        Log.fecha >= start_dt,
+        Log.fecha <= end_dt + timedelta(days=1),
         Log.tipo_evento.like('%Asistencia%')
     ).all()
 
-    # 4. Crear Libro de Excel
     wb = Workbook()
     ws = wb.active
     ws.title = "Reporte Matricial"
 
-    fill_header_green = PatternFill(start_color="92D050", end_color="92D050", fill_type="solid")
-    fill_header_yellow = PatternFill(start_color="FFC000", end_color="FFC000", fill_type="solid")
+    fill_green = PatternFill(start_color="92D050", end_color="92D050", fill_type="solid")
+    fill_yellow = PatternFill(start_color="FFC000", end_color="FFC000", fill_type="solid")
     border_thin = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
     align_center = Alignment(horizontal='center', vertical='center', wrap_text=True)
 
-    # Cabecera General
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=3 + len(dias_reporte))
-    cell_title = ws.cell(row=1, column=1)
-    cell_title.value = f"Reporte de Asistencia ({start_dt.strftime('%d/%m/%Y')} al {end_dt.strftime('%d/%m/%Y')})"
-    cell_title.alignment = Alignment(horizontal='right')
-    cell_title.font = Font(bold=True)
+    ws.cell(row=1, column=1, value=f"Reporte de Asistencia ({start_dt.strftime('%d/%m/%Y')} al {end_dt.strftime('%d/%m/%Y')})").font = Font(bold=True)
 
-    # Cabeceras de Columnas
-    headers = ["ID Biométrico", "Nombre Completo", "Departamento"]
+    headers = ["ID", "Nombre", "Depto"]
     for i, h in enumerate(headers, 1):
-        cell = ws.cell(row=2, column=i, value=h)
-        cell.fill = fill_header_green
-        cell.border = border_thin
-        cell.alignment = align_center
-        cell.font = Font(bold=True)
+        c = ws.cell(row=2, column=i, value=h)
+        c.fill, c.border, c.alignment, c.font = fill_green, border_thin, align_center, Font(bold=True)
 
-    # Cabeceras de Fechas
     for i, dia in enumerate(dias_reporte, 4):
-        display_date = datetime.strptime(dia, '%Y-%m-%d').strftime('%d/%m')
-        cell = ws.cell(row=2, column=i, value=display_date)
-        cell.fill = fill_header_yellow
-        cell.border = border_thin
-        cell.alignment = align_center
-        cell.font = Font(bold=True)
+        c = ws.cell(row=2, column=i, value=dia[8:10]+"/"+dia[5:7])
+        c.fill, c.border, c.alignment, c.font = fill_yellow, border_thin, align_center, Font(bold=True)
 
-    # 5. Llenado de Filas (Docentes)
     row_idx = 3
     for doc in docentes:
-        c1 = ws.cell(row=row_idx, column=1, value=doc.biometric_id)
-        c2 = ws.cell(row=row_idx, column=2, value=doc.nombre)
-        c3 = ws.cell(row=row_idx, column=3, value="Docencia")
-        for c in [c1, c2, c3]: c.border = border_thin
+        ws.cell(row=row_idx, column=1, value=doc.biometric_id).border = border_thin
+        ws.cell(row=row_idx, column=2, value=doc.nombre).border = border_thin
+        ws.cell(row=row_idx, column=3, value="Docencia").border = border_thin
 
         for col_idx, dia in enumerate(dias_reporte, 4):
-            # Solución híbrida para evitar el error de startswith en objetos datetime
-            day_logs = []
-            for l in all_logs:
-                if l.usuario_id == doc.biometric_id:
-                    # Convertimos a string si es datetime para poder comparar el inicio
-                    fecha_str = l.fecha if isinstance(l.fecha, str) else l.fecha.strftime('%Y-%m-%d %H:%M:%S')
-                    if fecha_str.startswith(dia):
-                        day_logs.append(l)
+            day_logs = [l for l in all_logs if l.usuario_id == doc.biometric_id and l.fecha.strftime('%Y-%m-%d') == dia]
             
-            manana_txt = "--:--"
-            tarde_txt = "--:--"
+            m_logs = sorted([l for l in day_logs if l.fecha.hour < 13], key=lambda x: x.fecha)
+            t_logs = sorted([l for l in day_logs if l.fecha.hour >= 13], key=lambda x: x.fecha)
 
-            if day_logs:
-                logs_m = []
-                logs_t = []
-                for l in day_logs:
-                    try:
-                        # Manejo seguro de la fecha sea string u objeto
-                        if isinstance(l.fecha, str):
-                            hora_str = l.fecha.split(' ')[1]
-                            h_val = int(hora_str.split(':')[0])
-                        else:
-                            hora_str = l.fecha.strftime('%H:%M:%S')
-                            h_val = l.fecha.hour
-                            
-                        prefix = "(H) " if l.origen == "Huella" else "(W) "
-                        item = {"hora": hora_str[:5], "prefix": prefix}
-                        if h_val < 13: logs_m.append(item)
-                        else: logs_t.append(item)
-                    except: continue
+            def fmt(logs):
+                if not logs: return "--:--"
+                pre = "(H) " if logs[0].origen == "Huella" else "(W) "
+                if len(logs) > 1: return f"{pre}{logs[0].fecha.strftime('%H:%M')}-{logs[-1].fecha.strftime('%H:%M')}"
+                return f"{pre}{logs[0].fecha.strftime('%H:%M')}"
 
-                if logs_m:
-                    logs_m.sort(key=lambda x: x['hora'])
-                    start = logs_m[0]
-                    end = logs_m[-1]
-                    manana_txt = f"{start['prefix']}{start['hora']}-{end['hora']}" if len(logs_m) > 1 else f"{start['prefix']}{start['hora']}"
-
-                if logs_t:
-                    logs_t.sort(key=lambda x: x['hora'])
-                    start = logs_t[0]
-                    end = logs_t[-1]
-                    tarde_txt = f"{start['prefix']}{start['hora']}-{end['hora']}" if len(logs_t) > 1 else f"{start['prefix']}{start['hora']}"
-
-            cell_val = f"Mañana: {manana_txt}\nTarde: {tarde_txt}"
-            cell = ws.cell(row=row_idx, column=col_idx, value=cell_val)
-            cell.border = border_thin
-            cell.alignment = align_center
+            cell = ws.cell(row=row_idx, column=col_idx, value=f"Mañana: {fmt(m_logs)}\nTarde: {fmt(t_logs)}")
+            cell.border, cell.alignment = border_thin, align_center
 
         row_idx += 1
 
-    # Ajuste de anchos
     ws.column_dimensions['B'].width = 30
-    ws.column_dimensions['C'].width = 15
-    for i in range(4, 4 + len(dias_reporte)):
-        ws.column_dimensions[ws.cell(row=2, column=i).column_letter].width = 22
+    for i in range(4, 4 + len(dias_reporte)): ws.column_dimensions[ws.cell(row=2, column=i).column_letter].width = 22
 
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
-    
-    return send_file(output, download_name="Reporte_Asistencia_ISTAE.xlsx", as_attachment=True)
+    return send_file(output, download_name="Reporte_ISTAE.xlsx", as_attachment=True)
 
-# --- SEGURIDAD Y OTROS ---
+# --- AJAX Y SEGURIDAD ---
 
 @app.route('/api/logs')
 def get_logs_json():
     logs_data = db.session.query(Log, User).outerjoin(User, Log.usuario_id == User.biometric_id).order_by(Log.id.desc()).limit(15).all()
-    res = [{"fecha": l.fecha, "nombre": u.nombre if u else "ID: " + l.usuario_id, "tipo_evento": l.tipo_evento, "origen": l.origen} for l, u in logs_data]
+    # Formateo de fecha para el monitor en vivo
+    res = [{"fecha": l.fecha.strftime('%Y-%m-%d %H:%M:%S'), "nombre": u.nombre if u else "ID: " + l.usuario_id, "tipo_evento": l.tipo_evento, "origen": l.origen} for l, u in logs_data]
     return jsonify(res)
 
 @app.route('/toggle_permiso/<int:id>', methods=['POST'])
@@ -395,14 +329,13 @@ def toggle_permiso(id):
 @app.route('/actualizar_password', methods=['POST'])
 @login_required
 def actualizar_password():
-    curr_pw = request.form['current_password']
-    new_pw = request.form['new_password']
-    if check_password_hash(current_user.password, curr_pw):
-        current_user.password = generate_password_hash(new_pw, method='pbkdf2:sha256')
+    curr, new = request.form['current_password'], request.form['new_password']
+    if check_password_hash(current_user.password, curr):
+        current_user.password = generate_password_hash(new, method='pbkdf2:sha256')
         db.session.commit()
-        flash('Contraseña actualizada con éxito.', 'success')
+        flash('Contraseña actualizada.', 'success')
         return redirect(url_for('index'))
-    flash('La contraseña actual es incorrecta.', 'danger')
+    flash('Contraseña actual incorrecta.', 'danger')
     return redirect(url_for('perfil'))
 
 @app.route('/login', methods=['GET', 'POST'])

@@ -115,7 +115,7 @@
                     <table class="table table-hover mb-0">
                         <thead class="table-light sticky-top shadow-sm">
                             <tr>
-                                <th class="ps-3">Hora y Fecha</th>
+                                <th class="ps-3">Fecha y Hora</th>
                                 <th>Usuario</th>
                                 <th>Evento</th>
                                 <th class="text-center">Origen</th>
@@ -178,34 +178,36 @@
 
 
 <script>
-    // 1. FUNCIÓN QUIRÚRGICA: Muestra texto literal de la BD
+    // 1. FUNCIÓN QUIRÚRGICA: Devuelve una cadena de texto "DD/MM/YYYY HH:MM:SS"
     function normalizarFechaHora(stringBD) {
         try {
-            if (!stringBD || typeof stringBD !== "string") {
-                return { hora: "--:--:--", fecha: "Sin fecha" };
+            if (!stringBD) return "Fecha inválida";
+            
+            // new Date() es sorprendentemente robusto y puede parsear muchos formatos,
+            // incluyendo "YYYY-MM-DD HH:MM:SS" y el formato RFC 2822 que parece estar llegando.
+            const d = new Date(stringBD);
+
+            // Si la fecha parseada no es válida, devolvemos un texto de error.
+            if (isNaN(d.getTime())) {
+                console.warn("No se pudo parsear la fecha:", stringBD);
+                return "Fecha-hora ilegible";
             }
 
-            // 🔧 Normaliza formato para evitar errores raros
-            const limpio = stringBD.replace("T", " ").trim();
+            const pad = (num) => num.toString().padStart(2, '0');
 
-            const partes = limpio.split(' ');
-            const rawFecha = partes[0] || "0000-00-00";
-            const rawHora = partes[1] || "--:--:--";
+            const dia = pad(d.getDate());
+            const mes = pad(d.getMonth() + 1); // getMonth() es 0-indexado
+            const anio = d.getFullYear();
 
-            const f = rawFecha.split('-');
+            const hora = pad(d.getHours());
+            const min = pad(d.getMinutes());
+            const seg = pad(d.getSeconds());
 
-            if (f.length !== 3) {
-                return { hora: rawHora, fecha: rawFecha };
-            }
-
-            let anio = f[0] === "0026" ? "2026" : f[0]; // Tu parche visual intacto
-            let fechaLatina = `${f[2]}/${f[1]}/${anio}`;
-
-            return { hora: rawHora, fecha: fechaLatina };
+            return `${dia}/${mes}/${anio} ${hora}:${min}:${seg}`;
 
         } catch (e) {
-            console.warn("Fecha inválida:", stringBD);
-            return { hora: "--:--:--", fecha: "Error fecha" };
+            console.warn("Error excepcional parseando fecha:", stringBD, e);
+            return "Fecha con error";
         }
     }
 
@@ -222,7 +224,7 @@
             logsBody.innerHTML = ''; 
             
             logs.forEach(log => {
-                const t = normalizarFechaHora(log.fecha || "");
+                const fechaHoraFormateada = normalizarFechaHora(log.fecha || "");
                 
                 let bClass = "secondary";
                 if (log.tipo_evento === "Asistencia + puerta") bClass = "success";
@@ -235,10 +237,7 @@
 
                 let row = `
                     <tr>
-                        <td class="ps-3">
-                            <div class="fw-bold text-dark mono" style="font-size: 1rem;">${t.hora}</div>
-                            <div class="text-muted extra-small">${t.fecha}</div>
-                        </td>
+                        <td class="ps-3 mono" style="font-size: 0.9rem;">${fechaHoraFormateada}</td>
                         <td><div class="fw-semibold small">${log.nombre || 'ID: ' + log.usuario_id}</div></td>
                         <td><span class="badge bg-${bClass} bg-opacity-10 text-${bClass} border border-${bClass} extra-small">${log.tipo_evento}</span></td>
                         <td class="text-center"><div class="extra-small text-muted"><i class="bi ${icon} d-block"></i> ${log.origen}</div></td>

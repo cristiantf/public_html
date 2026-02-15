@@ -3,17 +3,20 @@
 #include <WiFiClientSecure.h>
 #include <WiFiManager.h>
 #include <ESP8266WebServer.h>
-#include <LittleFS.h> // Sistema de archivos para respaldo local
+#include <LittleFS.h>
 
 // --- CONFIGURACIÓN ---
 const char* HOST_URL = "https://acceso.istae.edu.ec";
 const char* TOKEN_NODE = "istae1805A";
-const char* LOG_FILE = "/respaldo_logs.txt";
-const int RELAY_PIN = 5;
+const char* BACKUP_PATH = "/respaldo_logs.txt";
+const int RELAY_PIN = 5; // Pin D1
 
-// --- TEMPORIZADORES ---
+// --- TEMPORIZADORES (NO BLOQUEANTES) ---
 unsigned long msRelay = 0, msSync = 0, msCheckCmd = 0, msWiFiCheck = 0;
-const long duracionApertura = 3000, intervaloSync = 600000, intervaloCheckCmd = 3000, intervaloWiFi = 30000;
+const long duracionApertura = 3000;
+const long intervaloSync = 600000;
+const long intervaloCheckCmd = 3000;
+const long intervaloWiFi = 30000;
 
 bool puertaAbierta = false;
 String listaBlanca = "";
@@ -24,14 +27,12 @@ void setup() {
   pinMode(RELAY_PIN, OUTPUT);
   digitalWrite(RELAY_PIN, LOW);
 
-  // Inicializar LittleFS
-  if (!LittleFS.begin()) {
-    Serial.println("❌ Error al montar LittleFS");
-  }
+  if (!LittleFS.begin()) Serial.println("❌ Error LittleFS");
 
-  WiFiManager wifiManager;
-  if (!wifiManager.autoConnect("NODE_PUERTA_ISTAE")) ESP.restart();
+  WiFiManager wm;
+  if (!wm.autoConnect("NODE_PUERTA_ISTAE")) ESP.restart();
 
+  Serial.println("✅ Red ISTAE conectada.");
   server.onNotFound(manejarEventoBiometrico);
   server.begin();
   sincronizarListaBlanca();
@@ -39,102 +40,106 @@ void setup() {
 
 void loop() {
   server.handleClient();
-  unsigned long currentMillis = millis();
+  unsigned long now = millis();
 
-  // Gestión de WiFi y Reconexión
-  if (currentMillis - msWiFiCheck >= intervaloWiFi) {
+  // Gestión de WiFi y Respaldo
+  if (now - msWiFiCheck >= intervaloWiFi) {
     if (WiFi.status() != WL_CONNECTED) WiFi.reconnect();
-    else procesarPendientesLittleFS(); // Si hay red, enviar lo guardado
-    msWiFiCheck = currentMillis;
+    else procesarPendientesLittleFS();
+    msWiFiCheck = now;
   }
 
-  // Cierre de puerta
-  if (puertaAbierta && (currentMillis - msRelay >= duracionApertura)) {
+  // Cierre de puerta automático
+  if (puertaAbierta && (now - msRelay >= duracionApertura)) {
     digitalWrite(RELAY_PIN, LOW);
     puertaAbierta = false;
+    Serial.println("🔒 Puerta cerrada físicamente.");
   }
 
-  // Polling y Sync
-  if (currentMillis - msCheckCmd >= intervaloCheckCmd) { revisarComandosNube(); msCheckCmd = currentMillis; }
-  if (currentMillis - msSync >= intervaloSync) { sincronizarListaBlanca(); msSync = currentMillis; }
+  // Tareas de red
+  if (now - msCheckCmd >= intervaloCheckCmd) { revisarComandosNube(); msCheckCmd = now; }
+  if (now - msSync >= intervaloSync) { sincronizarListaBlanca(); msSync = now; }
 }
 
-// --- EXTRACCIÓN QUIRÚRGICA DE DATOS ---
+// --- PROCESAMIENTO XML DE FÁBRICA ---
 void manejarEventoBiometrico() {
   if (server.method() == HTTP_POST) {
-    String body = server.arg("plain");
-    
-    // Extracción de ID (employeeNoString)
-    String id = extraerDato(body, "employeeNoString", 19);
-    // Extracción de Fecha/Hora original del equipo (time)
-    String fechaEquipo = extraerDato(body, "time", 7); 
+    String body = "";
+    if (server.hasArg("plain")) body = server.arg("plain");
+    else while (server.client().available()) body += (char)server.client().read();
 
-    if (id != "") {
-      Serial.printf("👤 ID: %s | 🕒 Fecha Equipo: %s\n", id.c_str(), fechaEquipo.c_str());
-      
-      String estado = (listaBlanca.indexOf(id) != -1) ? "EXITO" : "DENEGADO";
-      if (estado == "EXITO") activarRele();
-      
-      // Intentar enviar, si falla, guardar en LittleFS
-      if (!enviarLogNube(id, estado, fechaEquipo)) {
-        guardarEnLittleFS(id, estado, fechaEquipo);
+    if (body.length() > 0) {
+      // Extracción entre etiquetas XML de fábrica <tag>DATO</tag>
+      String id = extraerEntreEtiquetas(body, "<employeeNoString>", "</employeeNoString>");
+      String fecha = extraerEntreEtiquetas(body, "<time>", "</time>");
+
+      if (id != "") {
+        Serial.printf("\n👤 ID Detectado: %s | 🕒 Hora: %s\n", id.c_str(), fecha.c_str());
+        
+        String estado = (listaBlanca.indexOf(id) != -1) ? "EXITO" : "DENEGADO";
+        if (estado == "EXITO") activarRele();
+        
+        if (!enviarLogNube(id, estado, fecha)) {
+          guardarEnLittleFS(id, estado, fecha);
+        }
       }
     }
     server.send(200, "text/plain", "OK");
   }
 }
 
-String extraerDato(String fuente, String etiqueta, int offset) {
-  int pos = fuente.indexOf(etiqueta);
-  if (pos == -1) return "";
-  String res = "";
-  for (int i = pos + offset; i < pos + offset + 20; i++) {
-    if (isDigit(fuente[i]) || fuente[i] == '-' || fuente[i] == ':' || fuente[i] == 'T') res += fuente[i];
-    else if (res.length() > 0) break;
-  }
-  return res;
+String extraerEntreEtiquetas(String fuente, String inicio, String fin) {
+  int posInicio = fuente.indexOf(inicio);
+  if (posInicio == -1) return "";
+  posInicio += inicio.length();
+  int posFin = fuente.indexOf(fin, posInicio);
+  if (posFin == -1) return "";
+  return fuente.substring(posInicio, posFin);
 }
 
-// --- SISTEMA DE RESPALDO (LITTLEFS) ---
+// --- COMUNICACIÓN Y PERSISTENCIA ---
 void guardarEnLittleFS(String id, String estado, String fecha) {
-  File f = LittleFS.open(LOG_FILE, "a");
+  File f = LittleFS.open(BACKUP_PATH, "a");
   if (f) {
     f.printf("%s,%s,%s\n", id.c_str(), estado.c_str(), fecha.c_str());
     f.close();
-    Serial.println("💾 Log respaldado localmente por falta de red.");
+    Serial.println("💾 Falló red. Log guardado en memoria interna.");
   }
 }
 
 void procesarPendientesLittleFS() {
-  if (!LittleFS.exists(LOG_FILE)) return;
-  
-  File f = LittleFS.open(LOG_FILE, "r");
-  String backupData = "";
-  while (f.available()) backupData += (char)f.read();
+  if (!LittleFS.exists(BACKUP_PATH)) return;
+  File f = LittleFS.open(BACKUP_PATH, "r");
+  String buffer = "";
+  while (f.available()) buffer += (char)f.read();
   f.close();
-  LittleFS.remove(LOG_FILE); // Limpiar tras leer
+  LittleFS.remove(BACKUP_PATH);
 
-  // Re-enviar cada línea
   int pos = 0;
-  while ((pos = backupData.indexOf('\n')) != -1) {
-    String linea = backupData.substring(0, pos);
-    backupData.remove(0, pos + 1);
-    // Parsear simple (id,estado,fecha) y re-enviar
-    // (Simplificado para este ejemplo)
-    Serial.println("🔄 Re-enviando log pendiente...");
+  while ((pos = buffer.indexOf('\n')) != -1) {
+    String linea = buffer.substring(0, pos);
+    buffer.remove(0, pos + 1);
+    int c1 = linea.indexOf(',');
+    int c2 = linea.lastIndexOf(',');
+    if (c1 != -1 && c2 != -1) {
+      String id = linea.substring(0, c1);
+      String est = linea.substring(c1 + 1, c2);
+      String fec = linea.substring(c2 + 1);
+      if (!enviarLogNube(id, est, fec)) {
+        guardarEnLittleFS(id, est, fec); // Re-guardar si la nube sigue caída
+        break;
+      }
+      Serial.println("🔄 Log de respaldo enviado con éxito.");
+    }
   }
 }
 
-// --- COMUNICACIÓN CLOUD ---
 bool enviarLogNube(String id, String estado, String fecha) {
   if (WiFi.status() != WL_CONNECTED) return false;
-  
-  WiFiClientSecure client;
-  client.setInsecure();
+  WiFiClientSecure client; client.setInsecure();
   HTTPClient http;
   String url = String(HOST_URL) + "/api/recibir_log";
   String json = "{\"id\":\"" + id + "\",\"estado\":\"" + estado + "\",\"fecha_dispositivo\":\"" + fecha + "\",\"token\":\"" + String(TOKEN_NODE) + "\"}";
-  
   http.begin(client, url);
   http.addHeader("Content-Type", "application/json");
   int code = http.POST(json);
@@ -146,20 +151,29 @@ void activarRele() {
   digitalWrite(RELAY_PIN, HIGH);
   puertaAbierta = true;
   msRelay = millis();
+  Serial.println("🔓 Apertura autorizada.");
 }
 
 void sincronizarListaBlanca() {
+  if (WiFi.status() != WL_CONNECTED) return;
   WiFiClientSecure client; client.setInsecure(); HTTPClient http;
   if (http.begin(client, String(HOST_URL) + "/api/sincronizar")) {
-    if (http.GET() == 200) listaBlanca = http.getString();
+    if (http.GET() == 200) {
+      listaBlanca = http.getString();
+      Serial.println("☁️ Usuarios sincronizados desde la nube.");
+    }
     http.end();
   }
 }
 
 void revisarComandosNube() {
+  if (WiFi.status() != WL_CONNECTED) return;
   WiFiClientSecure client; client.setInsecure(); HTTPClient http;
   if (http.begin(client, String(HOST_URL) + "/api/check_comando")) {
-    if (http.GET() == 200 && http.getString() == "ABRIR") activarRele();
+    if (http.GET() == 200 && http.getString() == "ABRIR") {
+      activarRele();
+      Serial.println("🌐 Orden remota detectada: ABRIR");
+    }
     http.end();
   }
 }

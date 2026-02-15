@@ -1,157 +1,110 @@
-# Sistema de Control de Acceso y Asistencia Biométrico
+# Sistema de Control de Acceso Biométrico - ISTAE
 
-## 1. Descripción General
+Este proyecto es un sistema de control de acceso biométrico basado en la web, desarrollado para el ISTAE. Gestiona el acceso de usuarios a través de una interfaz web y un componente de hardware (ESP8266 con sensor biométrico). El sistema registra cada intento de acceso y proporciona un panel de control web para administradores y docentes.
 
-Este proyecto es un sistema de control de acceso y registro de asistencia automatizado basado en la web. Centraliza la gestión de un biométrico Hikvision en un servidor web, eliminando la necesidad de una PC dedicada en el punto de acceso.
+## Características
 
-El sistema permite la gestión de usuarios (docentes), el control de acceso a través de una puerta, el monitoreo de eventos en tiempo real y la generación de reportes de asistencia.
+- **Autenticación de usuarios:** Roles separados para administradores y docentes.
+- **Panel de administración:** Permite la gestión completa de los usuarios docentes (crear, editar, eliminar).
+- **Panel de docente:** Permite a los docentes ver sus registros de acceso y abrir la puerta de forma remota.
+- **Monitorización en tiempo real:** Muestra los últimos eventos de acceso en el panel de administración.
+- **Informes de asistencia:** Genera informes de asistencia en formato Excel, con filtros por fecha y docente.
+- **Apertura remota de la puerta:** Permite a los administradores y docentes autorizados abrir la puerta desde la interfaz web.
+- **Integración de hardware:** Se integra con un dispositivo ESP8266 para el escaneo biométrico y el control de la puerta.
+- **Capacidad sin conexión:** El ESP8266 almacena los registros de acceso si el servidor no está disponible y los envía más tarde.
 
-## 2. Arquitectura
+## Pila Tecnológica
 
-El proyecto se compone de tres elementos principales:
+- **Backend:** Flask, Flask-SQLAlchemy, Flask-Login
+- **Base de datos:** MySQL (inicialmente configurado para SQLite)
+- **Frontend:** Bootstrap 5, Jinja2, JavaScript (con AJAX para actualizaciones en tiempo real)
+- **Hardware:** ESP8266 (NodeMCU)
+- **Librerías Python:** `openpyxl` para la generación de informes en Excel.
 
-*   **Backend (Aplicación Flask):** El cerebro del sistema, escrito en Python con el framework Flask. Gestiona la lógica de negocio, la autenticación, la comunicación con la base de datos y expone una API para el hardware.
-*   **Frontend:** Una interfaz web responsiva construida con **Bootstrap 5** y **JavaScript**, que permite la administración del sistema y la visualización de datos en tiempo real.
-*   **Hardware (NodeMCU):** Un microcontrolador NodeMCU (ESP8266) actúa como un puente IoT. Se comunica con el biométrico, valida localmente los permisos de acceso, activa el relé de la puerta y reporta los eventos al servidor central.
+## Hardware (`node.ino`)
 
-## 3. Funcionalidades Principales
+El sketch `node.ino` está diseñado para un dispositivo ESP8266/NodeMCU conectado a un sensor biométrico y un relé.
 
-*   **Autenticación de Usuarios:** Roles diferenciados para `admin` y `docente`.
-*   **Gestión de Docentes:** Creación, edición y eliminación de usuarios.
-*   **Control de Acceso por Huella:** Asignación de permisos individuales para que un usuario pueda abrir la puerta con su huella.
-*   **Apertura Remota:** Los administradores y docentes con permiso pueden abrir la puerta desde la interfaz web.
-*   **Monitor de Eventos en Tiempo Real:** El panel de administrador muestra las asistencias y los intentos de acceso fallidos sin necesidad de recargar la página.
-*   **Reportes de Asistencia:** Generación de reportes de asistencia en formato Excel, con filtrado por fecha y docente.
-*   **Sincronización Offline:** El NodeMCU descarga periódicamente la lista de usuarios autorizados para poder operar incluso si pierde la conexión a internet temporalmente.
+- Se conecta a la red WiFi local mediante WiFiManager para una fácil configuración.
+- Sincroniza una "lista blanca" de IDs de usuario autorizados desde el servidor Flask.
+- Cuando se escanea una huella digital, comprueba el ID con la lista blanca.
+- Si el ID está autorizado, activa un relé para abrir la puerta.
+- Envía los registros de acceso al servidor en tiempo real.
+- Si el servidor no está disponible, almacena los registros localmente en LittleFS y los envía cuando se restablece la conexión.
+- Comprueba periódicamente si hay comandos remotos pendientes en el servidor (como abrir la puerta).
 
-## 4. API para NodeMCU
+## Configuración e Instalación
 
-La aplicación expone los siguientes endpoints para la comunicación con el hardware:
-
-*   #### `GET /api/sincronizar`
-    El NodeMCU utiliza este endpoint para descargar la "lista blanca" de IDs de usuarios que tienen permiso para abrir la puerta.
-    *   **Respuesta Exitosa (200):** Una cadena de texto con los IDs biométricos separados por comas (ej: `999,5,9,12`).
-
-*   #### `POST /api/recibir_log`
-    El NodeMCU envía un reporte a este endpoint cada vez que se produce un evento en el biométrico.
-    *   **Cuerpo de la Petición (JSON):**
-        ```json
-        {
-          "id": "123",
-          "estado": "ASISTENCIA_EXITO",
-          "token": "istae1805A"
-        }
-        ```
-    *   **Respuesta Exitosa (200):** `{"status": "success"}`
-
-*   #### `GET /api/check_comando`
-    El NodeMCU sondea este endpoint periódicamente (cada 2 segundos) para verificar si hay una orden de apertura remota enviada desde la aplicación web.
-    *   **Respuesta (200):**
-        *   `ABRIR`: Si hay una orden de apertura pendiente.
-        *   `NADA`: Si no hay órdenes pendientes.
-
-## 5. Instalación y Puesta en Marcha
-
-1.  **Clonar el Repositorio:**
+1.  **Clonar el repositorio:**
     ```bash
-    git clone <URL_DEL_REPOSITORIO>
-    cd <NOMBRE_DEL_PROYECTO>
+    git clone <url-del-repositorio>
+    cd <directorio-del-repositorio>
     ```
-2.  **Crear y Activar Entorno Virtual:**
+
+2.  **Crear un entorno virtual:**
     ```bash
-    python3 -m venv venv
-    source venv/bin/activate
+    python -m venv venv
+    source venv/bin/activate  # En Windows: venv\Scripts\activate
     ```
-3.  **Instalar Dependencias:**
+
+3.  **Instalar las dependencias:**
     ```bash
     pip install -r requirements.txt
     ```
-4.  **Configurar la Aplicación:**
-    Revisa el archivo `config.py` para ajustar la `SECRET_KEY` si es necesario.
-5.  **Ejecutar la Aplicación:**
-    *   Para desarrollo:
-        ```bash
-        flask run
-        ```
-    *   Para producción, se recomienda usar un servidor WSGI como Gunicorn:
-        ```bash
-        gunicorn --bind 0.0.0.0:5000 app:app
-        ```
 
-## 6. Migración de SQLite a MySQL/MariaDB
+4.  **Configurar la aplicación:**
+    - Edita el fichero `config.py` para establecer la `SECRET_KEY` y la `SQLALCHEMY_DATABASE_URI`.
+    - El `TOKEN_NODE` en `config.py` debe coincidir con el `TOKEN_NODE` en el fichero `node.ino`.
 
-Para entornos de producción, es altamente recomendable migrar de SQLite a un sistema de base de datos más robusto como MySQL o MariaDB.
+5.  **Inicializar la base de datos:**
+    La base de datos se inicializa automáticamente en la primera ejecución. Se crea un usuario administrador por defecto:
+    - **Usuario:** `admin`
+    - **Contraseña:** `istae123A*`
 
-### Paso 1: Exportar los Datos de SQLite
-
-Ya hemos realizado este paso y guardado el resultado en `backup_sqlite.sql`. Este archivo contiene los comandos SQL para recrear la estructura y los datos.
-
-### Paso 2: Ajustar el Archivo de Volcado (`.sql`)
-
-Deberás abrir `backup_sqlite.sql` y hacer pequeños cambios de sintaxis en las sentencias `CREATE TABLE` para que sean compatibles con MySQL.
-
-*   **Ejemplo de cambio:**
-
-    **Sintaxis de SQLite:**
-    ```sql
-    CREATE TABLE usuarios (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        nombre TEXT NOT NULL,
-        ...
-    );
+6.  **Ejecutar la aplicación:**
+    Para desarrollo:
+    ```bash
+    flask run
+    ```
+    Para producción, se recomienda usar un servidor WSGI como Gunicorn:
+    ```bash
+    gunicorn --bind 0.0.0.0:5000 app:app
     ```
 
-    **Sintaxis equivalente en MySQL/MariaDB:**
-    ```sql
-    CREATE TABLE usuarios (
-        id INT PRIMARY KEY AUTO_INCREMENT,
-        nombre VARCHAR(100) NOT NULL,
-        ...
-    );
-    ```
-*   **Cambios comunes:**
-    *   `INTEGER PRIMARY KEY AUTOINCREMENT` -> `INT PRIMARY KEY AUTO_INCREMENT`
-    *   `TEXT` (para campos cortos) -> `VARCHAR(255)`
-    *   `TEXT` (para campos largos) -> `TEXT`
-    *   `DATETIME` -> `DATETIME` (generalmente compatible)
-    *   `INTEGER` -> `INT`
-    *   Las sentencias `INSERT INTO ...` son compatibles y no necesitan cambios.
-    *   Puedes eliminar las líneas `PRAGMA`, `BEGIN TRANSACTION;` y `COMMIT;` del archivo.
+## Endpoints de la API (para el ESP8266)
 
-### Paso 3: Instalar el Driver de Python para MySQL
+- `GET /api/sincronizar`: Devuelve una cadena de texto separada por comas con los IDs biométricos autorizados.
 
-La aplicación necesita un "conector" para hablar con MySQL. Instálalo con pip:
+- `POST /api/recibir_log`: Recibe una entrada de registro desde el ESP8266. Requiere un `TOKEN_NODE` válido.
+  - **Payload (JSON):** `{"id": "...", "estado": "...", "fecha_dispositivo": "...", "token": "..."}`
 
-```bash
-# Opción 1: mysqlclient (más rápido, pero a veces requiere compilación)
-pip install mysqlclient
+- `GET /api/check_comando`: Comprueba si hay comandos remotos pendientes (por ejemplo, "ABRIR").
 
-# Opción 2: PyMySQL (más fácil de instalar, puro Python)
-pip install PyMySQL
-```
+## Modelos de la Base de Datos
 
-### Paso 4: Cambiar la Configuración en `app.py`
+- **User:** Almacena la información de los usuarios.
+  - `id`: Clave primaria.
+  - `biometric_id`: El ID del sensor biométrico.
+  - `nombre`: Nombre completo del usuario.
+  - `username`: Nombre de usuario para el inicio de sesión.
+  - `password`: Contraseña hasheada.
+  - `rol`: `'admin'` o `'docente'`.
+  - `acceso_puerta`: `1` si el usuario puede abrir la puerta con su huella, `0` en caso contrario.
 
-Modifica la línea `SQLALCHEMY_DATABASE_URI` para que apunte a tu nueva base de datos.
+- **Log:** Almacena los registros de acceso.
+  - `id`: Clave primaria.
+  - `fecha`: Marca de tiempo del evento.
+  - `usuario_id`: El ID biométrico del usuario.
+  - `tipo_evento`: Por ejemplo, "Asistencia + puerta", "Apertura Remota".
+  - `origen`: Por ejemplo, "Huella", "Panel Control".
 
-*   **Si instalaste `PyMySQL`:**
-    ```python
-    # La URI debe empezar con 'mysql+pymysql://'
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://<user>:<password>@<host>/<database_name>'
-    ```
-*   **Si instalaste `mysqlclient`:**
-    ```python
-    # La URI debe empezar con 'mysql://'
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql://<user>:<password>@<host>/<database_name>'
-    ```
-    Reemplaza `<user>`, `<password>`, `<host>` y `<database_name>` con tus credenciales.
+- **Comando:** Almacena los comandos que debe ejecutar el ESP8266.
+  - `id`: Clave primaria.
+  - `instruccion`: El comando (por ejemplo, "ABRIR").
+  - `estado`: `'PENDIENTE'` o `'LISTO'`.
 
-### Paso 5: Importar los Datos
+## Configuración (`config.py`)
 
-Finalmente, crea una base de datos vacía en tu servidor MySQL/MariaDB y luego importa el archivo `backup_sqlite.sql` (ya modificado) usando la línea de comandos de `mysql`:
-
-```bash
-mysql -u <user> -p <database_name> < backup_sqlite.sql
-```
-
-Después de estos pasos, al reiniciar tu aplicación Flask, se conectará a la nueva base de datos MySQL/MariaDB con todos tus datos migrados.
+- `SECRET_KEY`: Clave secreta para la gestión de sesiones.
+- `SQLALCHEMY_DATABASE_URI`: Cadena de conexión a la base de datos.
+- `TOKEN_NODE`: Token secreto para autenticar las peticiones del ESP8266. Debe ser el mismo que en el fichero `node.ino`.
