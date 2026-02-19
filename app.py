@@ -1,5 +1,7 @@
 import os
 import io
+import uuid
+import base64
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
@@ -14,6 +16,10 @@ from urllib.parse import quote_plus
 app = Flask(__name__)
 app.config['SECRET_KEY'] = config.SECRET_KEY
 
+# --- CONFIGURACIÓN DE CARPETAS ---
+UPLOAD_FOLDER = 'static/uploads/evidencias'
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
 # --- CONFIGURACIÓN DE BASE DE DATOS (MYSQL) ---
 encoded_password = quote_plus('avril18wen04@@A1')
 app.config['SQLALCHEMY_DATABASE_URI'] = f'mysql+pymysql://user1_istae:{encoded_password}@localhost/user1_biom'
@@ -25,6 +31,7 @@ login_manager = LoginManager(app)
 login_manager.login_view = 'login'
 
 # --- MODELOS DE DATOS ---
+
 class User(UserMixin, db.Model):
     __tablename__ = 'usuarios'
     id = db.Column(db.Integer, primary_key=True)
@@ -35,13 +42,25 @@ class User(UserMixin, db.Model):
     rol = db.Column(db.String(20), default='docente')
     acceso_puerta = db.Column(db.Integer, default=0)
 
+class Evento(db.Model):
+    __tablename__ = 'eventos'
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(100), nullable=False)
+    fecha_creacion = db.Column(db.DateTime, default=datetime.now)
+    activo = db.Column(db.Boolean, default=True)
+
 class Log(db.Model):
     __tablename__ = 'logs'
     id = db.Column(db.Integer, primary_key=True)
-    fecha = db.Column(db.DateTime, nullable=False) # Cambio a DateTime para mejor manejo
+    fecha = db.Column(db.DateTime, nullable=False)
     usuario_id = db.Column(db.String(20))
-    tipo_evento = db.Column(db.String(50))
+    tipo_evento = db.Column(db.String(100))
     origen = db.Column(db.String(50))
+    # Evidencias para modo Eventos
+    latitud = db.Column(db.String(30), nullable=True)
+    longitud = db.Column(db.String(30), nullable=True)
+    foto_path = db.Column(db.String(200), nullable=True)
+    evento_id = db.Column(db.Integer, db.ForeignKey('eventos.id'), nullable=True)
 
 class Comando(db.Model):
     __tablename__ = 'comandos'
@@ -50,6 +69,7 @@ class Comando(db.Model):
     estado = db.Column(db.String(20), default='PENDIENTE')
 
 # --- INICIALIZACIÓN ---
+
 @login_manager.user_loader
 def load_user(user_id):
     return db.session.get(User, int(user_id))
@@ -78,15 +98,14 @@ def api_recibir_log():
     if not data or data.get('token') != config.TOKEN_NODE:
         return jsonify({"status": "error", "message": "Token inválido"}), 403
 
-    fecha_log = None
-    fecha_str = data.get('fecha_dispositivo')
     tz_ecu = pytz.timezone('America/Guayaquil')
+    fecha_str = data.get('fecha_dispositivo')
+    fecha_log = None
 
     if fecha_str:
         try:
-            # Limpieza de formato ISAPI (reemplaza T por espacio)
+            # Soporte para formato ISAPI: 2026-02-19T12:00:00
             fecha_limpia = fecha_str.replace('T', ' ')
-            # Intentamos parsear la fecha enviada
             fecha_log = datetime.strptime(fecha_limpia[:19], "%Y-%m-%d %H:%M:%S")
         except:
             fecha_log = None
@@ -113,6 +132,63 @@ def api_check_comando():
         return "ABRIR"
     return "NADA"
 
+# --- GESTIÓN DE EVENTOS ---
+
+@app.route('/crear_evento', methods=['POST'])
+@login_required
+def crear_evento():
+    if current_user.rol != 'admin': return redirect(url_for('index'))
+    nombre = request.form.get('nombre')
+    if nombre:
+        nuevo = Evento(nombre=nombre)
+        db.session.add(nuevo)
+        db.session.commit()
+        flash(f'Evento "{nombre}" activado.', 'success')
+    return redirect(url_for('admin_dashboard'))
+
+@app.route('/toggle_evento/<int:id>')
+@login_required
+def toggle_evento(id):
+    ev = db.session.get(Evento, id)
+    if ev:
+        ev.activo = not ev.activo
+        db.session.commit()
+    return redirect(url_for('admin_dashboard'))
+
+# --- ASISTENCIA REMOTA SEGURA (GPS + FOTO) ---
+
+@app.route('/docente/marcar_evento', methods=['POST'])
+@login_required
+def marcar_evento():
+    data = request.json
+    tz_ecu = pytz.timezone('America/Guayaquil')
+    
+    foto_nombre = None
+    if data.get('foto'):
+        try:
+            header, encoded = data.get('foto').split(",", 1)
+            data_decoded = base64.b64decode(encoded)
+            foto_nombre = f"{current_user.biometric_id}_{uuid.uuid4().hex[:8]}.jpg"
+            with open(os.path.join(UPLOAD_FOLDER, foto_nombre), "wb") as f:
+                f.write(data_decoded)
+        except Exception as e:
+            print(f"Error evidencia: {e}")
+
+    nuevo_log = Log(
+        fecha=datetime.now(tz_ecu),
+        usuario_id=current_user.biometric_id,
+        tipo_evento=f"Asistencia Evento: {data.get('evento_nombre')}",
+        origen="Web App (GPS+Foto)",
+        latitud=data.get('lat'),
+        longitud=data.get('lng'),
+        foto_path=foto_nombre,
+        evento_id=data.get('evento_id')
+    )
+    
+    db.session.add(nuevo_log)
+    db.session.commit()
+    return jsonify({"status": "success", "message": "Asistencia registrada con éxito."})
+
 # --- VISTAS Y DASHBOARDS ---
 
 @app.route('/')
@@ -125,13 +201,15 @@ def index():
 def admin_dashboard():
     if current_user.rol != 'admin': return redirect(url_for('docente_dashboard'))
     docentes = User.query.filter_by(rol='docente').all()
-    return render_template('admin.html', docentes=docentes)
+    eventos = Evento.query.order_by(Evento.id.desc()).all()
+    return render_template('admin.html', docentes=docentes, eventos=eventos)
 
 @app.route('/docente/dashboard')
 @login_required
 def docente_dashboard():
     logs = Log.query.filter_by(usuario_id=current_user.biometric_id).order_by(Log.id.desc()).limit(10).all()
-    return render_template('docente.html', logs=logs)
+    evento_activo = Evento.query.filter_by(activo=True).first()
+    return render_template('docente.html', logs=logs, evento_activo=evento_activo)
 
 @app.route('/perfil')
 @login_required
@@ -175,11 +253,11 @@ def docente_marcar():
     db.session.add(Log(
         fecha=datetime.now(pytz.timezone('America/Guayaquil')),
         usuario_id=current_user.biometric_id,
-        tipo_evento="Asistencia",
-        origen="Asistencia remota"
+        tipo_evento="Asistencia Web",
+        origen="Plataforma Web"
     ))
     db.session.commit()
-    flash('Asistencia registrada.', 'success')
+    flash('Asistencia registrada correctamente.', 'success')
     return redirect(url_for('docente_dashboard'))
 
 # --- GESTIÓN DOCENTES ---
@@ -196,6 +274,7 @@ def crear_docente():
         acceso_puerta=1 if request.form.get('acceso_puerta') else 0
     ))
     db.session.commit()
+    flash('Docente registrado.', 'success')
     return redirect(url_for('admin_dashboard'))
 
 @app.route('/actualizar_docente', methods=['POST'])
@@ -209,6 +288,7 @@ def actualizar_docente():
     if request.form.get('password'):
         u.password = generate_password_hash(request.form['password'], method='pbkdf2:sha256')
     db.session.commit()
+    flash('Datos actualizados.', 'success')
     return redirect(url_for('admin_dashboard'))
 
 @app.route('/eliminar_docente/<int:id>')
@@ -218,6 +298,7 @@ def eliminar_docente(id):
     if u and u.username != 'admin':
         db.session.delete(u)
         db.session.commit()
+        flash('Registro eliminado.', 'warning')
     return redirect(url_for('admin_dashboard'))
 
 @app.route('/editar_docente/<int:id>')
@@ -245,10 +326,8 @@ def descargar_reporte_matricial():
         start_dt = end_dt - timedelta(days=6)
 
     dias_reporte = [ (start_dt + timedelta(days=x)).strftime('%Y-%m-%d') for x in range((end_dt-start_dt).days + 1) ]
-
     docentes = User.query.filter_by(biometric_id=docente_filtro).all() if docente_filtro and docente_filtro != 'todos' else User.query.filter_by(rol='docente').all()
 
-    # Consulta optimizada por rango de fechas (DateTime)
     all_logs = Log.query.filter(
         Log.fecha >= start_dt,
         Log.fecha <= end_dt + timedelta(days=1),
@@ -257,17 +336,18 @@ def descargar_reporte_matricial():
 
     wb = Workbook()
     ws = wb.active
-    ws.title = "Reporte Matricial"
+    ws.title = "Reporte ISTAE"
 
+    # Estilos
     fill_green = PatternFill(start_color="92D050", end_color="92D050", fill_type="solid")
     fill_yellow = PatternFill(start_color="FFC000", end_color="FFC000", fill_type="solid")
     border_thin = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
     align_center = Alignment(horizontal='center', vertical='center', wrap_text=True)
 
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=3 + len(dias_reporte))
-    ws.cell(row=1, column=1, value=f"Reporte de Asistencia ({start_dt.strftime('%d/%m/%Y')} al {end_dt.strftime('%d/%m/%Y')})").font = Font(bold=True)
+    ws.cell(row=1, column=1, value=f"Reporte de Asistencia Multimodal ({start_dt.strftime('%d/%m/%Y')} al {end_dt.strftime('%d/%m/%Y')})").font = Font(bold=True, size=14)
 
-    headers = ["ID", "Nombre", "Depto"]
+    headers = ["ID BIO", "Nombre Docente", "Unidad"]
     for i, h in enumerate(headers, 1):
         c = ws.cell(row=2, column=i, value=h)
         c.fill, c.border, c.alignment, c.font = fill_green, border_thin, align_center, Font(bold=True)
@@ -288,32 +368,41 @@ def descargar_reporte_matricial():
             m_logs = sorted([l for l in day_logs if l.fecha.hour < 13], key=lambda x: x.fecha)
             t_logs = sorted([l for l in day_logs if l.fecha.hour >= 13], key=lambda x: x.fecha)
 
-            def fmt(logs):
-                if not logs: return "--:--"
-                pre = "(H) " if logs[0].origen == "Huella" else "(W) "
-                if len(logs) > 1: return f"{pre}{logs[0].fecha.strftime('%H:%M')}-{logs[-1].fecha.strftime('%H:%M')}"
-                return f"{pre}{logs[0].fecha.strftime('%H:%M')}"
+            def fmt(logs_list):
+                if not logs_list: return "--:--"
+                prefix = "(H) " if logs_list[0].origen == "Huella" else "(W) "
+                if len(logs_list) > 1:
+                    return f"{prefix}{logs_list[0].fecha.strftime('%H:%M')}-{logs_list[-1].fecha.strftime('%H:%M')}"
+                return f"{prefix}{logs_list[0].fecha.strftime('%H:%M')}"
 
-            cell = ws.cell(row=row_idx, column=col_idx, value=f"Mañana: {fmt(m_logs)}\nTarde: {fmt(t_logs)}")
+            cell = ws.cell(row=row_idx, column=col_idx, value=f"M: {fmt(m_logs)}\nT: {fmt(t_logs)}")
             cell.border, cell.alignment = border_thin, align_center
 
         row_idx += 1
 
-    ws.column_dimensions['B'].width = 30
-    for i in range(4, 4 + len(dias_reporte)): ws.column_dimensions[ws.cell(row=2, column=i).column_letter].width = 22
+    ws.column_dimensions['B'].width = 35
+    for i in range(4, 4 + len(dias_reporte)):
+        ws.column_dimensions[ws.cell(row=2, column=i).column_letter].width = 22
 
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
-    return send_file(output, download_name="Reporte_ISTAE.xlsx", as_attachment=True)
+    return send_file(output, download_name="Reporte_Asistencia_ISTAE.xlsx", as_attachment=True)
 
 # --- AJAX Y SEGURIDAD ---
 
 @app.route('/api/logs')
 def get_logs_json():
     logs_data = db.session.query(Log, User).outerjoin(User, Log.usuario_id == User.biometric_id).order_by(Log.id.desc()).limit(15).all()
-    # Formateo de fecha para el monitor en vivo
-    res = [{"fecha": l.fecha.strftime('%Y-%m-%d %H:%M:%S'), "nombre": u.nombre if u else "ID: " + l.usuario_id, "tipo_evento": l.tipo_evento, "origen": l.origen} for l, u in logs_data]
+    res = []
+    for l, u in logs_data:
+        res.append({
+            "fecha": l.fecha.strftime('%Y-%m-%d %H:%M:%S'),
+            "nombre": u.nombre if u else "ID: " + l.usuario_id,
+            "tipo_evento": l.tipo_evento,
+            "origen": l.origen,
+            "evidencia": True if l.foto_path else False
+        })
     return jsonify(res)
 
 @app.route('/toggle_permiso/<int:id>', methods=['POST'])
@@ -333,9 +422,9 @@ def actualizar_password():
     if check_password_hash(current_user.password, curr):
         current_user.password = generate_password_hash(new, method='pbkdf2:sha256')
         db.session.commit()
-        flash('Contraseña actualizada.', 'success')
+        flash('Contraseña actualizada con éxito.', 'success')
         return redirect(url_for('index'))
-    flash('Contraseña actual incorrecta.', 'danger')
+    flash('La contraseña actual es incorrecta.', 'danger')
     return redirect(url_for('perfil'))
 
 @app.route('/login', methods=['GET', 'POST'])
