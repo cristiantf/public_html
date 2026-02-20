@@ -4,6 +4,7 @@ import uuid
 import base64
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file
 from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta, time
@@ -11,7 +12,6 @@ import pytz
 from openpyxl import Workbook
 from openpyxl.styles import PatternFill, Alignment, Border, Side, Font
 import config
-from urllib.parse import quote_plus
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = config.SECRET_KEY
@@ -21,12 +21,12 @@ UPLOAD_FOLDER = 'static/uploads/evidencias'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # --- CONFIGURACIÓN DE BASE DE DATOS (MYSQL) ---
-encoded_password = quote_plus('avril18wen04@@A1')
-app.config['SQLALCHEMY_DATABASE_URI'] = f'mysql+pymysql://user1_istae:{encoded_password}@localhost/user1_biom'
+app.config['SQLALCHEMY_DATABASE_URI'] = config.SQLALCHEMY_DATABASE_URI
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {'pool_pre_ping': True, 'pool_recycle': 280}
 
 db = SQLAlchemy(app)
+migrate = Migrate(app, db)
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
 

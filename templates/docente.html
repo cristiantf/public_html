@@ -2,6 +2,7 @@
 
 {% block sidebar %}
 <div class="py-3 h-100 d-flex flex-column">
+    <!-- Encabezado del Portal -->
     <div class="text-center mb-4 pt-3">
         <div class="bg-primary d-inline-block p-2 rounded-4 mb-2 shadow">
             <i class="bi bi-person-badge-fill fs-2 text-white"></i>
@@ -9,6 +10,7 @@
         <h6 class="text-white fw-bold mt-1 small">PORTAL DOCENTE</h6>
     </div>
     
+    <!-- Navegación Principal -->
     <div class="nav flex-column flex-grow-1">
         <div class="section-label">Personal</div>
         <a href="{{ url_for('docente_dashboard') }}" class="nav-link active">
@@ -19,7 +21,7 @@
         </a>
     </div>
 
-    <!-- Opción de Salida en el Sidebar (Ideal para móviles) -->
+    <!-- Opción de Salida (Fija para móviles) -->
     <div class="mt-auto p-3">
         <hr class="text-white-50">
         <a href="{{ url_for('logout') }}" class="btn btn-outline-danger w-100 rounded-pill py-2 small fw-bold">
@@ -35,12 +37,12 @@
     <div class="row align-items-center mb-4 fade-in">
         <div class="col-md-7">
             <h2 class="fw-bold text-dark mb-1">Bienvenido, {{ current_user.nombre.split(' ')[0] }}</h2>
-            <p class="text-muted mb-0 small">Estado del Sistema: <span class="badge bg-success bg-opacity-10 text-success rounded-pill px-3">Conectado</span></p>
+            <p class="text-muted mb-0 small">Estado del Sistema: <span class="badge bg-success bg-opacity-10 text-success rounded-pill px-3">Sincronizado</span></p>
         </div>
         <div class="col-md-5 text-end d-none d-md-block">
             <div class="bg-white p-2 px-3 rounded-4 shadow-sm border d-inline-flex align-items-center">
                 <div class="text-end me-3">
-                    <div class="small fw-bold text-primary text-uppercase" style="font-size: 0.6rem;">Hora Oficial</div>
+                    <div class="small fw-bold text-primary text-uppercase" style="font-size: 0.6rem;">Hora del Servidor</div>
                     <h4 class="mb-0 fw-bold mono text-dark" id="reloj-docente">00:00:00</h4>
                 </div>
                 <i class="bi bi-clock-fill text-primary fs-3"></i>
@@ -48,39 +50,57 @@
         </div>
     </div>
 
+    <!-- MODO EVENTO ACTIVO (Lógica de Tesis: GPS + Foto) -->
+    {% if evento_activo %}
+    <div class="card border-0 shadow-lg mb-5 border-start border-5 border-info fade-in" style="background: linear-gradient(to right, #ffffff, #f0f9ff);">
+        <div class="card-body p-4 p-md-5 text-center text-md-start">
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <span class="badge bg-info text-white px-3 rounded-pill mb-2">EVENTO INSTITUCIONAL ACTIVO</span>
+                    <h1 class="fw-extrabold text-dark mb-3">{{ evento_activo.nombre }}</h1>
+                    <p class="text-muted mb-0">Para este evento es obligatorio validar su <b>ubicación GPS</b> y capturar una <b>evidencia fotográfica</b>.</p>
+                </div>
+                <div class="col-md-4 text-center text-md-end mt-4 mt-md-0">
+                    <button class="btn btn-info btn-lg rounded-pill px-5 py-3 text-white fw-bold shadow-sm" onclick="abrirCapturaEvento()">
+                        <i class="bi bi-camera-fill me-2"></i>MARCAR ASISTENCIA
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- TARJETAS DE RESUMEN ESTADÍSTICO -->
     <div class="row g-3 mb-4 fade-in" style="animation-delay: 0.1s;">
         <div class="col-6 col-md-3">
-            <div class="card border-0 shadow-sm p-3 text-center h-100">
+            <div class="card border-0 shadow-sm p-3 text-center h-100 border-bottom border-primary border-3">
                 <div class="small text-muted fw-bold mb-1 text-uppercase" style="font-size: 0.65rem;">Este Mes</div>
                 <h3 class="fw-bold mb-0 text-primary">{{ logs|length }}</h3>
                 <div class="extra-small text-muted">Marcaciones</div>
             </div>
         </div>
         <div class="col-6 col-md-3">
-            <div class="card border-0 shadow-sm p-3 text-center h-100">
+            <div class="card border-0 shadow-sm p-3 text-center h-100 border-bottom border-success border-3">
                 <div class="small text-muted fw-bold mb-1 text-uppercase" style="font-size: 0.65rem;">Hoy</div>
                 {% set hoy_str = current_time_display if current_time_display else "" %}
                 {% set count = namespace(value=0) %}
                 {% for l in logs %}
                     {% set f_log = l.fecha.strftime('%Y-%m-%d') if l.fecha is not string else l.fecha %}
-                    {% if hoy_str in f_log %}
-                        {% set count.value = count.value + 1 %}
-                    {% endif %}
+                    {% if hoy_str in f_log %}{% set count.value = count.value + 1 %}{% endif %}
                 {% endfor %}
                 <h3 class="fw-bold mb-0 text-success">{{ count.value }}</h3>
                 <div class="extra-small text-muted">Registros</div>
             </div>
         </div>
         <div class="col-6 col-md-3">
-            <div class="card border-0 shadow-sm p-3 text-center h-100">
+            <div class="card border-0 shadow-sm p-3 text-center h-100 border-bottom border-dark border-3">
                 <div class="small text-muted fw-bold mb-1 text-uppercase" style="font-size: 0.65rem;">Acceso</div>
                 <h3 class="fw-bold mb-0 text-dark">{% if current_user.acceso_puerta == 1 %}SÍ{% else %}NO{% endif %}</h3>
                 <div class="extra-small text-muted">Puerta Física</div>
             </div>
         </div>
         <div class="col-6 col-md-3">
-            <div class="card border-0 shadow-sm p-3 text-center h-100">
+            <div class="card border-0 shadow-sm p-3 text-center h-100 border-bottom border-info border-3">
                 <div class="small text-muted fw-bold mb-1 text-uppercase" style="font-size: 0.65rem;">Método</div>
                 <h3 class="fw-bold mb-0 text-info"><i class="bi bi-fingerprint"></i></h3>
                 <div class="extra-small text-muted">Biometría</div>
@@ -88,17 +108,17 @@
         </div>
     </div>
 
-    <!-- Acciones Principales -->
+    <!-- ACCIONES ESTÁNDAR -->
     <div class="row g-4">
         <div class="col-md-6">
             {% if current_user.acceso_puerta == 1 %}
-            <div class="card h-100 border-0 shadow-lg text-center p-4 action-card border-bottom border-danger border-5" onclick="confirmarApertura()">
+            <div class="card h-100 border-0 shadow-lg text-center p-4 action-card" onclick="confirmarApertura()">
                 <div class="card-body py-4">
                     <div class="bg-danger bg-opacity-10 d-inline-block p-4 rounded-circle mb-4">
                         <i class="bi bi-unlock-fill text-danger" style="font-size: 3.5rem;"></i>
                     </div>
                     <h3 class="fw-bold text-dark">Apertura Remota</h3>
-                    <p class="text-muted px-lg-5 mb-4 small">Pulse para liberar la cerradura eléctrica inmediatamente.</p>
+                    <p class="text-muted px-lg-5 mb-4 small">Active este botón para liberar la cerradura eléctrica inmediatamente.</p>
                     <div id="btn-container-apertura">
                         <button class="btn btn-danger w-100 rounded-pill py-3 fw-bold shadow-sm">
                             <i class="bi bi-door-open me-2"></i>ABRIR PUERTA
@@ -113,7 +133,7 @@
                         <i class="bi bi-lock-fill text-secondary" style="font-size: 3.5rem;"></i>
                     </div>
                     <h4 class="fw-bold text-secondary">Acceso Restringido</h4>
-                    <p class="small text-muted mb-0 px-lg-4">No posee permisos de apertura física.</p>
+                    <p class="small text-muted mb-0 px-lg-4">No tiene permisos de apertura física.</p>
                 </div>
             </div>
             {% endif %}
@@ -126,8 +146,8 @@
                         <div class="bg-primary bg-opacity-10 d-inline-block p-4 rounded-circle mb-4">
                             <i class="bi bi-fingerprint text-primary" style="font-size: 3.5rem;"></i>
                         </div>
-                        <h3 class="fw-bold text-dark">Registrar Asistencia</h3>
-                        <p class="text-muted px-lg-5 mb-4 small">Marque su ingreso o salida manualmente vía web.</p>
+                        <h3 class="fw-bold text-dark">Asistencia Estándar</h3>
+                        <p class="text-muted px-lg-5 mb-4 small">Marcación de rutina rápida vía web (sin evidencias).</p>
                         <div id="btn-container-marcar">
                             <button class="btn btn-primary w-100 rounded-pill py-3 fw-bold shadow-sm">
                                 <i class="bi bi-check2-circle me-2"></i>REGISTRAR AHORA
@@ -139,11 +159,11 @@
         </div>
     </div>
 
-    <!-- SECCIÓN: HISTORIAL -->
+    <!-- TABLA DE HISTORIAL -->
     <div class="card mt-5 border-0 shadow-sm overflow-hidden mb-5 fade-in">
-        <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+        <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center border-bottom">
             <h6 class="mb-0 fw-bold"><i class="bi bi-clock-history me-2 text-primary"></i>Movimientos Recientes</h6>
-            <span class="badge bg-light text-dark border-0 px-3 fw-normal small">Sincronizado</span>
+            <span class="badge bg-light text-dark border-0 px-3 fw-normal small">Sincronizado con Base de Datos</span>
         </div>
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0">
@@ -151,7 +171,7 @@
                     <tr>
                         <th class="ps-4">Fecha y Hora</th>
                         <th>Evento</th>
-                        <th>Origen</th>
+                        <th>Origen / Método</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -170,7 +190,7 @@
                             {% set ev = log.tipo_evento|lower %}
                             {% if "puerta" in ev %}
                                 <span class="badge rounded-pill bg-success bg-opacity-10 text-success px-3 fw-bold">Asistencia + Puerta</span>
-                            {% elif "remota" in ev %}
+                            {% elif "remota" in ev or "apertura" in ev %}
                                 <span class="badge rounded-pill bg-danger bg-opacity-10 text-danger px-3 fw-bold">Apertura Remota</span>
                             {% else %}
                                 <span class="badge rounded-pill bg-primary bg-opacity-10 text-primary px-3 fw-bold">{{ log.tipo_evento }}</span>
@@ -178,9 +198,9 @@
                         </td>
                         <td>
                             {% if log.origen == "Huella" %}
-                                <span class="text-info small fw-bold"><i class="bi bi-cpu-fill me-1"></i>Huella</span>
+                                <span class="text-info small fw-bold"><i class="bi bi-cpu-fill me-1"></i>Biométrico Físico</span>
                             {% else %}
-                                <span class="text-primary small fw-bold"><i class="bi bi-laptop me-1"></i>Web</span>
+                                <span class="text-primary small fw-bold"><i class="bi bi-laptop me-1"></i>Plataforma Web</span>
                             {% endif %}
                         </td>
                     </tr>
@@ -193,7 +213,31 @@
     </div>
 </div>
 
-<!-- Modal de Confirmación -->
+<!-- MODAL DE CAPTURA DE EVIDENCIA (GPS + FOTO) -->
+<div class="modal fade" id="modalEvidencia" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content rounded-4 border-0 shadow-lg">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="fw-bold">Validación de Asistencia</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" onclick="cerrarCamara()"></button>
+            </div>
+            <div class="modal-body p-4 text-center">
+                <div class="ratio ratio-4x3 mb-3 bg-dark rounded-4 overflow-hidden shadow-inner border">
+                    <video id="video-stream" autoplay playsinline class="object-fit-cover"></video>
+                    <canvas id="photo-canvas" class="d-none"></canvas>
+                </div>
+                <div id="status-evidencia" class="small text-muted mb-3">
+                    <i class="bi bi-geo-alt-fill text-danger"></i> <span id="gps-info">Obteniendo coordenadas GPS...</span>
+                </div>
+                <button id="btn-evidencia-confirm" class="btn btn-info w-100 rounded-pill py-3 fw-bold text-white shadow" disabled onclick="enviarAsistenciaEvento()">
+                    CAPTURAR FOTO Y REGISTRAR
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de Confirmación Apertura Remota -->
 <div class="modal fade" id="modalConfirmDocente" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-sm">
         <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
@@ -211,6 +255,12 @@
 </div>
 
 <script>
+    let videoStream = null;
+    let userCoords = { lat: null, lng: null };
+
+    /**
+     * Reloj Digital en tiempo real
+     */
     function iniciarRelojDigital() {
         const display = document.getElementById('reloj-docente');
         function actualizar() {
@@ -221,16 +271,104 @@
         actualizar();
     }
 
+    /**
+     * Muestra modal de confirmación antes de abrir la puerta
+     */
     function confirmarApertura() {
         const modal = new bootstrap.Modal(document.getElementById('modalConfirmDocente'));
         modal.show();
+    }
+
+    /**
+     * Lógica para Asistencia con Evidencias (GPS + Foto)
+     */
+    async function abrirCapturaEvento() {
+        const modal = new bootstrap.Modal(document.getElementById('modalEvidencia'));
+        modal.show();
+
+        // 1. Obtener Ubicación GPS
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(pos => {
+                userCoords.lat = pos.coords.latitude;
+                userCoords.lng = pos.coords.longitude;
+                document.getElementById('gps-info').innerText = "GPS: VALIDADO CORRECTAMENTE";
+                validarCapturaReady();
+            }, err => {
+                document.getElementById('gps-info').innerText = "Error: Active el GPS para continuar.";
+                alert("Para eventos es obligatorio habilitar la ubicación.");
+            }, { enableHighAccuracy: true });
+        }
+
+        // 2. Iniciar Cámara Frontal
+        try {
+            videoStream = await navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: "user", width: 640, height: 480 } 
+            });
+            document.getElementById('video-stream').srcObject = videoStream;
+            validarCapturaReady();
+        } catch (e) {
+            alert("No se pudo acceder a la cámara. Verifique los permisos.");
+        }
+    }
+
+    function validarCapturaReady() {
+        if (userCoords.lat && videoStream) {
+            document.getElementById('btn-evidencia-confirm').disabled = false;
+        }
+    }
+
+    function cerrarCamara() {
+        if (videoStream) videoStream.getTracks().forEach(track => track.stop());
+    }
+
+    /**
+     * Procesa la captura, convierte a Base64 y envía por POST
+     */
+    async function enviarAsistenciaEvento() {
+        const video = document.getElementById('video-stream');
+        const canvas = document.getElementById('photo-canvas');
+        const btn = document.getElementById('btn-evidencia-confirm');
+        
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>PROCESANDO...';
+
+        // Capturar Frame de Video
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        canvas.getContext('2d').drawImage(video, 0, 0);
+        const base64Img = canvas.toDataURL('image/jpeg', 0.7);
+
+        const payload = {
+            evento_id: "{{ evento_activo.id if evento_activo else 0 }}",
+            evento_nombre: "{{ evento_activo.nombre if evento_activo else '' }}",
+            lat: userCoords.lat,
+            lng: userCoords.lng,
+            foto: base64Img
+        };
+
+        try {
+            const res = await fetch('/docente/marcar_evento', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (data.status === 'success') {
+                cerrarCamara();
+                location.reload();
+            }
+        } catch (e) {
+            alert("Error de conexión con el servidor.");
+            btn.disabled = false;
+            btn.innerText = "REINTENTAR CAPTURA";
+        }
     }
 
     function mostrarCargaMarcacion(enlace) {
         enlace.style.pointerEvents = 'none';
         const container = document.getElementById('btn-container-marcar');
         if (container) {
-            container.innerHTML = `<button class="btn btn-primary w-100 rounded-pill py-3 disabled shadow-none"><span class="spinner-border spinner-border-sm me-2"></span>MARCANDO...</button>`;
+            container.innerHTML = `<button class="btn btn-primary w-100 rounded-pill py-3 disabled shadow-none"><span class="spinner-border spinner-border-sm me-2"></span>REGISTRANDO...</button>`;
         }
     }
 
@@ -244,5 +382,6 @@
     .extra-small { font-size: 0.7rem; }
     .fade-in { animation: fadeIn 0.5s ease forwards; opacity: 0; }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    #video-stream { transform: scaleX(-1); } /* Efecto espejo para selfies */
 </style>
 {% endblock %}

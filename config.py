@@ -7,7 +7,7 @@ SECRET_KEY = 'tesis_secreta_istae'
 # --- CONFIGURACIÓN DE BASE DE DATOS ---
 # Formato: mysql+pymysql://usuario:contraseña@servidor/nombre_base_datos
 # Las credenciales corresponden a tu configuración en el servidor HestiaCP
-SQLALCHEMY_DATABASE_URI = 'mysql+pymysql://user1_istae:avril18wen04@@A1@localhost/user1_biom'
+SQLALCHEMY_DATABASE_URI = 'mysql+pymysql://root:@localhost/user1_biom'
 
 # --- PROTOCOLO DE SEGURIDAD IOT ---
 # Este token es obligatorio en cada petición POST del NodeMCU

@@ -10,28 +10,31 @@
         <h6 class="text-white fw-bold mt-1 small">SISTEMA ISTAE</h6>
     </div>
     
-    <!-- Menú de Navegación -->
+    <!-- Menú de Navegación Principal -->
     <div class="nav flex-column flex-grow-1">
         <div class="section-label">General</div>
         <a href="{{ url_for('admin_dashboard') }}" class="nav-link {% if request.endpoint == 'admin_dashboard' %}active{% endif %}">
             <i class="bi bi-grid-fill me-3"></i> Dashboard
         </a>
         
-        <div class="section-label">Gestión Docente</div>
-        <a href="#collapseNuevo" class="nav-link" data-bs-toggle="collapse" role="button">
-            <i class="bi bi-person-plus-fill me-3"></i> Nuevo Registro
+        <div class="section-label">Gestión</div>
+        <a href="#collapseNuevo" class="nav-link text-white" data-bs-toggle="collapse" role="button">
+            <i class="bi bi-person-plus-fill me-3 text-success"></i> Nuevo Docente
         </a>
-        <a href="#collapseReportes" class="nav-link" data-bs-toggle="collapse" role="button">
-            <i class="bi bi-file-earmark-spreadsheet-fill me-3"></i> Reportes Excel
+        <a href="#collapseNuevoEvento" class="nav-link text-white" data-bs-toggle="collapse" role="button">
+            <i class="bi bi-calendar-event-fill me-3 text-info"></i> Crear Evento
+        </a>
+        <a href="#collapseReportes" class="nav-link text-white" data-bs-toggle="collapse" role="button">
+            <i class="bi bi-file-earmark-spreadsheet-fill me-3 text-white-50"></i> Reportes Excel
         </a>
         
-        <div class="section-label">Control de Acceso</div>
+        <div class="section-label">Seguridad</div>
         <a href="#" class="nav-link text-warning" data-bs-toggle="modal" data-bs-target="#modalApertura">
             <i class="bi bi-unlock-fill me-3"></i> Apertura Forzada
         </a>
     </div>
 
-    <!-- Botón de Salida Permanente -->
+    <!-- Botón de Salida Permanente (Fijo para móviles) -->
     <div class="mt-auto p-3">
         <hr class="text-white-50">
         <a href="{{ url_for('logout') }}" class="btn btn-outline-danger w-100 rounded-pill py-2 small fw-bold">
@@ -42,63 +45,57 @@
 {% endblock %}
 
 {% block content %}
-<!-- MODAL DE SEGURIDAD -->
+<!-- MODAL DE SEGURIDAD PARA APERTURA -->
 <div class="modal fade" id="modalApertura" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
         <div class="modal-content rounded-4 border-0 shadow-lg">
-            <div class="modal-header bg-danger text-white border-0 py-3">
-                <h5 class="modal-title fw-bold"><i class="bi bi-shield-lock me-2"></i>Seguridad del Sistema</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body text-center p-5">
-                <div class="bg-danger bg-opacity-10 d-inline-block p-4 rounded-circle mb-4">
-                    <i class="bi bi-exclamation-triangle-fill text-danger fs-1"></i>
+            <div class="modal-body text-center p-4">
+                <i class="bi bi-exclamation-triangle-fill text-danger fs-1 mb-3"></i>
+                <h5 class="fw-bold">¿Confirmar Apertura?</h5>
+                <p class="text-muted small">Esta acción activará la cerradura física y quedará registrada.</p>
+                <div class="d-grid gap-2">
+                    <a href="{{ url_for('admin_abrir') }}" class="btn btn-danger rounded-pill fw-bold">SÍ, ABRIR AHORA</a>
+                    <button type="button" class="btn btn-light rounded-pill border" data-bs-dismiss="modal">CANCELAR</button>
                 </div>
-                <h4 class="fw-bold">¿Abrir puerta físicamente?</h4>
-                <p class="text-muted">Esta acción activará el relé en el NodeMCU. Quedará un registro de auditoría bajo su nombre de administrador.</p>
-            </div>
-            <div class="modal-footer border-0 bg-light p-3">
-                <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">Cancelar</button>
-                <a href="{{ url_for('admin_abrir') }}" class="btn btn-danger rounded-pill px-5 fw-bold shadow">CONFIRMAR ACCIÓN</a>
             </div>
         </div>
     </div>
 </div>
 
 <div class="container-fluid">
-    <!-- KPIs -->
+    <!-- KPIs / INDICADORES CLAVE -->
     <div class="row g-3 mb-4 fade-in">
         <div class="col-6 col-md-3">
-            <div class="card border-0 shadow-sm p-3 text-center h-100 border-start border-primary border-4">
-                <div class="small text-muted fw-bold mb-1 text-uppercase" style="font-size: 0.6rem;">Total Docentes</div>
+            <div class="card border-0 shadow-sm p-3 border-start border-primary border-4 h-100">
+                <div class="small text-muted fw-bold text-uppercase" style="font-size: 0.6rem;">Docentes</div>
                 <h3 class="fw-bold mb-0 text-dark">{{ docentes|length }}</h3>
                 <div class="extra-small text-primary fw-bold">Registrados</div>
             </div>
         </div>
         <div class="col-6 col-md-3">
-            <div class="card border-0 shadow-sm p-3 text-center h-100 border-start border-success border-4">
-                <div class="small text-muted fw-bold mb-1 text-uppercase" style="font-size: 0.6rem;">Estado Hardware</div>
-                <h3 class="fw-bold mb-0 text-success"><i class="bi bi-wifi"></i></h3>
-                <div class="extra-small text-muted">En línea</div>
+            <div class="card border-0 shadow-sm p-3 border-start border-info border-4 h-100">
+                <div class="small text-muted fw-bold text-uppercase" style="font-size: 0.6rem;">Eventos</div>
+                <h3 class="fw-bold mb-0 text-info">{{ eventos|length if eventos else 0 }}</h3>
+                <div class="extra-small text-muted fw-bold">Activos/Creados</div>
             </div>
         </div>
         <div class="col-6 col-md-3">
-            <div class="card border-0 shadow-sm p-3 text-center h-100 border-start border-info border-4">
-                <div class="small text-muted fw-bold mb-1 text-uppercase" style="font-size: 0.6rem;">Hoy</div>
-                <h3 class="fw-bold mb-0 text-info" id="count-hoy">--</h3>
-                <div class="extra-small text-muted">Marcaciones</div>
+            <div class="card border-0 shadow-sm p-3 border-start border-success border-4 h-100">
+                <div class="small text-muted fw-bold text-uppercase" style="font-size: 0.6rem;">Hoy</div>
+                <h3 class="fw-bold mb-0 text-success" id="count-hoy">--</h3>
+                <div class="extra-small text-muted fw-bold">Marcaciones</div>
             </div>
         </div>
         <div class="col-6 col-md-3">
-            <div class="card border-0 shadow-sm p-3 text-center h-100 border-start border-warning border-4">
-                <div class="small text-muted fw-bold mb-1 text-uppercase" style="font-size: 0.6rem;">Cola</div>
-                <h3 class="fw-bold mb-0 text-dark">0</h3>
-                <div class="extra-small text-muted">Comandos</div>
+            <div class="card border-0 shadow-sm p-3 border-start border-warning border-4 h-100">
+                <div class="small text-muted fw-bold text-uppercase" style="font-size: 0.6rem;">Estado IoT</div>
+                <h3 class="fw-bold mb-0 text-warning"><i class="bi bi-cpu"></i></h3>
+                <div class="extra-small text-muted fw-bold">En línea</div>
             </div>
         </div>
     </div>
 
-    <!-- SECCIONES COLAPSABLES -->
+    <!-- SECCIONES COLAPSABLES (Invisibles por defecto) -->
     <div class="collapse mb-4" id="collapseNuevo">
         <div class="card shadow-sm border-0">
             <div class="card-header bg-success text-white fw-bold py-3">➕ Registrar Nuevo Docente</div>
@@ -106,8 +103,8 @@
                 <form action="{{ url_for('crear_docente') }}" method="POST">
                     <div class="row g-3">
                         <div class="col-md-6"><label class="form-label small fw-bold">Nombre Completo</label><input type="text" name="nombre" class="form-control" required placeholder="Ej. Ing. Cristian"></div>
-                        <div class="col-md-6"><label class="form-label small fw-bold">ID Biométrico</label><input type="number" name="bio_id" class="form-control" required placeholder="101"></div>
-                        <div class="col-md-6"><label class="form-label small fw-bold">Usuario</label><input type="text" name="username" class="form-control" required></div>
+                        <div class="col-md-6"><label class="form-label small fw-bold">ID Biométrico (Hardware)</label><input type="number" name="bio_id" class="form-control" required placeholder="101"></div>
+                        <div class="col-md-6"><label class="form-label small fw-bold">Usuario Login</label><input type="text" name="username" class="form-control" required></div>
                         <div class="col-md-6"><label class="form-label small fw-bold">Contraseña</label><input type="password" name="password" class="form-control" required></div>
                         <div class="col-12 mt-3">
                             <div class="form-check form-switch p-3 border rounded-4 bg-light d-flex justify-content-between align-items-center">
@@ -116,7 +113,19 @@
                             </div>
                         </div>
                     </div>
-                    <button class="btn btn-success w-100 mt-4 py-2 fw-bold rounded-pill shadow">GUARDAR DOCENTE</button>
+                    <button class="btn btn-success w-100 mt-4 py-2 fw-bold rounded-pill shadow">GUARDAR REGISTRO</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="collapse mb-4" id="collapseNuevoEvento">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-info text-white fw-bold py-3">📅 Crear Nuevo Evento de Asistencia</div>
+            <div class="card-body p-4 bg-white">
+                <form action="{{ url_for('crear_evento') }}" method="POST" class="row g-3 align-items-end">
+                    <div class="col-md-9"><label class="form-label small fw-bold text-muted">Nombre o Descripción del Evento</label><input type="text" name="nombre" class="form-control" placeholder="Ej: Junta General - 25 Feb" required></div>
+                    <div class="col-md-3"><button class="btn btn-info w-100 rounded-pill text-white fw-bold py-2">ACTIVAR EVENTO</button></div>
                 </form>
             </div>
         </div>
@@ -130,52 +139,54 @@
                     <div class="row g-3">
                         <div class="col-md-4"><label class="form-label small fw-bold">Fecha Inicio</label><input type="date" name="fecha_inicio" class="form-control"></div>
                         <div class="col-md-4"><label class="form-label small fw-bold">Fecha Fin</label><input type="date" name="fecha_fin" class="form-control"></div>
-                        <div class="col-md-4"><label class="form-label small fw-bold">Docente</label>
+                        <div class="col-md-4"><label class="form-label small fw-bold">Filtrar Docente</label>
                             <select name="docente_id" class="form-select">
-                                <option value="todos">Todos</option>
+                                <option value="todos">Todos los Docentes</option>
                                 {% for d in docentes %}<option value="{{ d.biometric_id }}">{{ d.nombre }}</option>{% endfor %}
                             </select>
                         </div>
                     </div>
-                    <button class="btn btn-primary w-100 mt-4 py-2 fw-bold rounded-pill shadow">DESCARGAR REPORTE MATRICIAL</button>
+                    <button class="btn btn-primary w-100 mt-4 py-2 fw-bold rounded-pill shadow">DESCARGAR ARCHIVO .XLSX</button>
                 </form>
             </div>
         </div>
     </div>
 
-    <!-- CONTENIDO PRINCIPAL -->
-    <div class="row g-4">
-        <!-- MONITOR EN VIVO -->
+    <!-- CONTENIDO PRINCIPAL: MONITOR Y TABLA -->
+    <div class="row g-4 mt-1">
+        <!-- MONITOR EN TIEMPO REAL -->
         <div class="col-lg-8">
             <div class="card border-0 shadow-sm h-100 overflow-hidden">
                 <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
-                    <h6 class="mb-0 fw-bold"><i class="bi bi-broadcast text-primary me-2"></i>Monitor en Tiempo Real</h6>
+                    <h6 class="mb-0 fw-bold"><i class="bi bi-broadcast text-primary me-2"></i>Monitor de Auditoría</h6>
                     <span class="badge bg-primary bg-opacity-10 text-primary px-3 rounded-pill" id="live-indicator" style="opacity: 0.3;">
-                        <i class="bi bi-record-fill me-1 blink"></i> Sincronizando
+                        <i class="bi bi-record-fill me-1 blink"></i> Vivo
                     </span>
                 </div>
                 <div class="table-responsive">
                     <table class="table table-hover align-middle mb-0">
-                        <thead class="bg-light">
-                            <tr class="small text-muted text-uppercase">
+                        <thead class="bg-light small text-muted text-uppercase">
+                            <tr>
                                 <th class="ps-4">Hora / Fecha</th>
                                 <th>Docente</th>
                                 <th>Evento</th>
-                                <th class="text-center">Vía</th>
+                                <th class="text-center">Evid.</th>
                             </tr>
                         </thead>
-                        <tbody id="live-logs-body"></tbody>
+                        <tbody id="live-logs-body">
+                            <!-- Datos AJAX -->
+                        </tbody>
                     </table>
                 </div>
             </div>
         </div>
 
-        <!-- GESTIÓN DE DOCENTES CON FILTRO MEJORADO -->
+        <!-- LISTADO DOCENTES CON FILTRO MEJORADO -->
         <div class="col-lg-4">
             <div class="card border-0 shadow-sm h-100">
                 <div class="card-header bg-white py-3 border-bottom">
                     <div class="d-flex justify-content-between align-items-center mb-3">
-                        <h6 class="mb-0 fw-bold"><i class="bi bi-people-fill me-2 text-primary"></i>Personal</h6>
+                        <h6 class="mb-0 fw-bold">Personal Docente</h6>
                         <span class="badge bg-light text-primary border rounded-pill fw-bold" id="badge-contador-docentes">{{ docentes|length }}</span>
                     </div>
                     <div class="input-group input-group-sm">
@@ -184,7 +195,6 @@
                     </div>
                 </div>
                 
-                <!-- Contenedor del Listado -->
                 <div class="list-group list-group-flush rounded-bottom-4 overflow-hidden" id="listaDocentes">
                     {% for d in docentes %}
                     <div class="list-group-item d-flex justify-content-between align-items-center py-3 docente-row">
@@ -193,21 +203,19 @@
                             <code class="text-muted extra-small id-field">ID BIO: {{ d.biometric_id }}</code>
                         </div>
                         <div class="d-flex align-items-center">
-                            <div class="form-check form-switch me-2" title="Permiso de Puerta">
+                            <div class="form-check form-switch me-2">
                                 <input class="form-check-input" type="checkbox" onchange="togglePermiso('{{d.id}}', this)" {% if d.acceso_puerta == 1 %}checked{% endif %}>
                             </div>
-                            <div class="btn-group">
-                                <a href="{{ url_for('editar_docente', id=d.id) }}" class="btn btn-sm btn-light border" title="Editar"><i class="bi bi-pencil text-primary"></i></a>
-                                <a href="{{ url_for('eliminar_docente', id=d.id) }}" class="btn btn-sm btn-light border text-danger" onclick="return confirm('¿Seguro de eliminar este docente?')" title="Eliminar"><i class="bi bi-trash"></i></a>
+                            <div class="btn-group shadow-sm rounded-3">
+                                <a href="{{ url_for('editar_docente', id=d.id) }}" class="btn btn-sm btn-white border" title="Editar"><i class="bi bi-pencil text-primary"></i></a>
+                                <a href="{{ url_for('eliminar_docente', id=d.id) }}" class="btn btn-sm btn-white border text-danger" onclick="return confirm('¿Seguro de eliminar este registro permanente?')" title="Eliminar"><i class="bi bi-trash3-fill"></i></a>
                             </div>
                         </div>
                     </div>
                     {% endfor %}
-                    
-                    <!-- Mensaje sin resultados -->
                     <div id="no-results" class="p-5 text-center d-none">
                         <i class="bi bi-person-x fs-2 text-muted mb-2 d-block"></i>
-                        <span class="text-muted small fw-bold">No se encontraron docentes.</span>
+                        <span class="text-muted small fw-bold">Sin coincidencias</span>
                     </div>
                 </div>
             </div>
@@ -217,7 +225,7 @@
 
 <script>
     /**
-     * Sincronización de Monitor y KPIs
+     * Sincronización de Monitor, KPIs y Evidencias
      */
     async function actualizarMonitor() {
         const body = document.getElementById('live-logs-body');
@@ -229,22 +237,25 @@
             const res = await fetch('/api/logs');
             const logs = await res.json();
             
+            // Filtrar marcaciones de hoy para el KPI
             const hoy = new Date().toISOString().split('T')[0];
             const logsHoy = logs.filter(l => l.fecha.includes(hoy)).length;
             hoyDisplay.innerText = logsHoy;
 
             body.innerHTML = logs.map(l => {
                 const [f, h] = l.fecha.split(' ');
-                const icon = l.origen === "Huella" ? "bi-cpu text-info" : "bi-laptop text-primary";
+                const icon = l.origen.includes("Web") ? "bi-laptop text-primary" : "bi-cpu text-info";
+                const evIcon = l.evidencia ? '<i class="bi bi-camera-fill text-success" title="Tiene Evidencia (GPS/Foto)"></i>' : '<i class="bi bi-dash text-muted"></i>';
+                
                 let badge = "bg-primary";
                 if(l.tipo_evento.toLowerCase().includes("puerta")) badge = "bg-success";
                 if(l.tipo_evento.toLowerCase().includes("remota")) badge = "bg-danger";
 
                 return `<tr>
-                    <td class="ps-4 mono small"><b>${h}</b><br><span class="text-muted extra-small">${f}</span></td>
+                    <td class="ps-4 mono small text-dark"><b>${h}</b><br><span class="text-muted extra-small">${f}</span></td>
                     <td class="small fw-bold text-dark">${l.nombre}</td>
-                    <td><span class="badge ${badge} bg-opacity-10 text-dark border-0 px-3 extra-small fw-bold shadow-sm">${l.tipo_evento}</span></td>
-                    <td class="text-center"><i class="bi ${icon} fs-5" title="${l.origen}"></i></td>
+                    <td><span class="badge ${badge} bg-opacity-10 text-dark border-0 px-3 extra-small fw-bold">${l.tipo_evento}</span></td>
+                    <td class="text-center">${evIcon}</td>
                 </tr>`;
             }).join('');
         } catch (e) {
@@ -255,7 +266,7 @@
     }
 
     /**
-     * Filtro de Búsqueda Mejorado
+     * Filtro de Docentes (Nombre e ID) con contador dinámico
      */
     const inputBusqueda = document.getElementById('busDocente');
     const noResults = document.getElementById('no-results');
@@ -278,17 +289,13 @@
             }
         });
 
-        // Actualizar contador y estado vacío
         badgeContador.innerText = countVisible;
-        if (countVisible === 0) {
-            noResults.classList.remove('d-none');
-        } else {
-            noResults.classList.add('d-none');
-        }
+        if (countVisible === 0) noResults.classList.remove('d-none');
+        else noResults.classList.add('d-none');
     });
 
     /**
-     * Actualización rápida de permisos
+     * Switch de permisos rápidos (AJAX)
      */
     async function togglePermiso(id, cb) {
         try {
@@ -302,17 +309,17 @@
         }
     }
 
-    setInterval(actualizarMonitor, 3500);
+    setInterval(actualizarMonitor, 4000);
     actualizarMonitor();
 </script>
 
 <style>
     .blink { animation: blinker 1.5s linear infinite; }
     @keyframes blinker { 50% { opacity: 0; } }
-    .mono { font-family: 'JetBrains Mono', 'Fira Code', monospace; letter-spacing: 0.5px; }
+    .mono { font-family: 'JetBrains Mono', 'Fira Code', monospace; letter-spacing: -0.2px; }
     .extra-small { font-size: 0.7rem; }
-    .docente-row { transition: all 0.2s ease; border-left: 3px solid transparent; }
-    .docente-row:hover { background: #f8fafc !important; border-left: 3px solid #0d6efd; }
+    .btn-white { background: #fff; border: 1px solid #eee; }
+    .docente-row:hover { background: #f8fafc !important; border-left: 3px solid #0d6efd; transition: all 0.2s; }
     .fade-in { animation: fadeIn 0.5s ease-out; }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 </style>
