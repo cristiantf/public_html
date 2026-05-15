@@ -227,16 +227,24 @@ def editar_docente(id):
     return render_template('editar_docente.html', docente=u)
 
 # --- REPORTE MATRICIAL ---
-
 @app.route('/descargar_reporte_matricial')
 @login_required
 def descargar_reporte_matricial():
-    if current_user.rol != 'admin': return redirect(url_for('index'))
-    
+
+    if current_user.rol != 'admin':
+        return redirect(url_for('index'))
+
     fecha_ini_str = request.args.get('fecha_inicio')
     fecha_fin_str = request.args.get('fecha_fin')
     docente_filtro = request.args.get('docente_id')
-    
+
+    limite_manana = time(13, 30)
+    limite_tarde = time(13, 35)
+
+    # -----------------------------
+    # FECHAS
+    # -----------------------------
+
     if fecha_ini_str and fecha_fin_str:
         start_dt = datetime.strptime(fecha_ini_str, '%Y-%m-%d')
         end_dt = datetime.strptime(fecha_fin_str, '%Y-%m-%d')
@@ -244,16 +252,45 @@ def descargar_reporte_matricial():
         end_dt = datetime.now()
         start_dt = end_dt - timedelta(days=6)
 
-    dias_reporte = [ (start_dt + timedelta(days=x)).strftime('%Y-%m-%d') for x in range((end_dt-start_dt).days + 1) ]
+    # ✅ CORRECCIÓN IMPORTANTE
+    start_dt = start_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+    end_dt = end_dt.replace(hour=23, minute=59, second=59, microsecond=0)
 
-    docentes = User.query.filter_by(biometric_id=docente_filtro).all() if docente_filtro and docente_filtro != 'todos' else User.query.filter_by(rol='docente').all()
+    # -----------------------------
+    # DIAS DEL REPORTE
+    # -----------------------------
 
-    # Consulta optimizada por rango de fechas (DateTime)
+    dias_reporte = [
+        (start_dt + timedelta(days=x)).strftime('%Y-%m-%d')
+        for x in range((end_dt.date() - start_dt.date()).days + 1)
+    ]
+
+    # -----------------------------
+    # DOCENTES
+    # -----------------------------
+
+    if docente_filtro and docente_filtro != 'todos':
+        docentes = User.query.filter_by(
+            biometric_id=docente_filtro
+        ).all()
+    else:
+        docentes = User.query.filter_by(
+            rol='docente'
+        ).all()
+
+    # -----------------------------
+    # LOGS (CORREGIDO)
+    # -----------------------------
+
     all_logs = Log.query.filter(
         Log.fecha >= start_dt,
-        Log.fecha <= end_dt + timedelta(days=1),
+        Log.fecha <= end_dt,
         Log.tipo_evento.like('%Asistencia%')
     ).all()
+
+    # -----------------------------
+    # EXCEL
+    # -----------------------------
 
     wb = Workbook()
     ws = wb.active
@@ -261,52 +298,149 @@ def descargar_reporte_matricial():
 
     fill_green = PatternFill(start_color="92D050", end_color="92D050", fill_type="solid")
     fill_yellow = PatternFill(start_color="FFC000", end_color="FFC000", fill_type="solid")
-    border_thin = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
-    align_center = Alignment(horizontal='center', vertical='center', wrap_text=True)
 
-    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=3 + len(dias_reporte))
-    ws.cell(row=1, column=1, value=f"Reporte de Asistencia ({start_dt.strftime('%d/%m/%Y')} al {end_dt.strftime('%d/%m/%Y')})").font = Font(bold=True)
+    border_thin = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+
+    align_center = Alignment(
+        horizontal='center',
+        vertical='center',
+        wrap_text=True
+    )
+
+    # -----------------------------
+    # TITULO
+    # -----------------------------
+
+    ws.merge_cells(
+        start_row=1,
+        start_column=1,
+        end_row=1,
+        end_column=3 + len(dias_reporte)
+    )
+
+    ws.cell(
+        row=1,
+        column=1,
+        value=f"Reporte de Asistencia ({start_dt.strftime('%d/%m/%Y')} al {end_dt.strftime('%d/%m/%Y')})"
+    ).font = Font(bold=True)
+
+    # -----------------------------
+    # HEADERS
+    # -----------------------------
 
     headers = ["ID", "Nombre", "Depto"]
+
     for i, h in enumerate(headers, 1):
+
         c = ws.cell(row=2, column=i, value=h)
-        c.fill, c.border, c.alignment, c.font = fill_green, border_thin, align_center, Font(bold=True)
+
+        c.fill = fill_green
+        c.border = border_thin
+        c.alignment = align_center
+        c.font = Font(bold=True)
+
+    # -----------------------------
+    # DIAS
+    # -----------------------------
 
     for i, dia in enumerate(dias_reporte, 4):
-        c = ws.cell(row=2, column=i, value=dia[8:10]+"/"+dia[5:7])
-        c.fill, c.border, c.alignment, c.font = fill_yellow, border_thin, align_center, Font(bold=True)
+
+        c = ws.cell(
+            row=2,
+            column=i,
+            value=dia[8:10] + "/" + dia[5:7]
+        )
+
+        c.fill = fill_yellow
+        c.border = border_thin
+        c.alignment = align_center
+        c.font = Font(bold=True)
+
+    # -----------------------------
+    # FILAS
+    # -----------------------------
 
     row_idx = 3
+
     for doc in docentes:
+
         ws.cell(row=row_idx, column=1, value=doc.biometric_id).border = border_thin
         ws.cell(row=row_idx, column=2, value=doc.nombre).border = border_thin
         ws.cell(row=row_idx, column=3, value="Docencia").border = border_thin
 
         for col_idx, dia in enumerate(dias_reporte, 4):
-            day_logs = [l for l in all_logs if l.usuario_id == doc.biometric_id and l.fecha.strftime('%Y-%m-%d') == dia]
-            
-            m_logs = sorted([l for l in day_logs if l.fecha.hour < 13], key=lambda x: x.fecha)
-            t_logs = sorted([l for l in day_logs if l.fecha.hour >= 13], key=lambda x: x.fecha)
+
+            day_logs = [
+
+                l for l in all_logs
+
+                if l.usuario_id == doc.biometric_id
+                and l.fecha.strftime('%Y-%m-%d') == dia
+
+            ]
+
+            # ✅ HORARIO CORREGIDO
+
+            m_logs = sorted(
+                [l for l in day_logs if l.fecha.time() <= limite_manana],
+                key=lambda x: x.fecha
+            )
+
+            t_logs = sorted(
+                [l for l in day_logs if l.fecha.time() >= limite_tarde],
+                key=lambda x: x.fecha
+            )
 
             def fmt(logs):
-                if not logs: return "--:--"
+
+                if not logs:
+                    return "--:--"
+
                 pre = "(H) " if logs[0].origen == "Huella" else "(W) "
-                if len(logs) > 1: return f"{pre}{logs[0].fecha.strftime('%H:%M')}-{logs[-1].fecha.strftime('%H:%M')}"
+
+                if len(logs) > 1:
+                    return f"{pre}{logs[0].fecha.strftime('%H:%M')}-{logs[-1].fecha.strftime('%H:%M')}"
+
                 return f"{pre}{logs[0].fecha.strftime('%H:%M')}"
 
-            cell = ws.cell(row=row_idx, column=col_idx, value=f"Mañana: {fmt(m_logs)}\nTarde: {fmt(t_logs)}")
-            cell.border, cell.alignment = border_thin, align_center
+            cell = ws.cell(
+
+                row=row_idx,
+                column=col_idx,
+
+                value=f"Mañana: {fmt(m_logs)}\nTarde: {fmt(t_logs)}"
+
+            )
+
+            cell.border = border_thin
+            cell.alignment = align_center
 
         row_idx += 1
 
     ws.column_dimensions['B'].width = 30
-    for i in range(4, 4 + len(dias_reporte)): ws.column_dimensions[ws.cell(row=2, column=i).column_letter].width = 22
+
+    for i in range(4, 4 + len(dias_reporte)):
+
+        ws.column_dimensions[
+            ws.cell(row=2, column=i).column_letter
+        ].width = 22
 
     output = io.BytesIO()
-    wb.save(output)
-    output.seek(0)
-    return send_file(output, download_name="Reporte_ISTAE.xlsx", as_attachment=True)
 
+    wb.save(output)
+
+    output.seek(0)
+
+    return send_file(
+        output,
+        download_name="Reporte_ISTAE.xlsx",
+        as_attachment=True
+    )
 # --- AJAX Y SEGURIDAD ---
 
 @app.route('/api/logs')
