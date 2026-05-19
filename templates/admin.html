@@ -16,16 +16,24 @@
         <a href="{{ url_for('admin_dashboard') }}" class="nav-link {% if request.endpoint == 'admin_dashboard' %}active{% endif %}">
             <i class="bi bi-grid-fill me-3"></i> Dashboard
         </a>
-        
+        <a href="{{ url_for('gestion_asistencia') }}" class="nav-link"><i class="bi bi-calendar-range-fill me-3"></i> Gestión de Asistencia</a>
+        <a href="{{ url_for('gestion_permisos') }}" class="nav-link"><i class="bi bi-calendar-check-fill me-3"></i> Gestión de Permisos</a>
+
         <div class="section-label">Gestión Docente</div>
         <a href="#collapseNuevo" class="nav-link" data-bs-toggle="collapse" role="button">
             <i class="bi bi-person-plus-fill me-3"></i> Nuevo Registro
+        </a>
+        <a href="#collapsePermiso" class="nav-link" data-bs-toggle="collapse" role="button">
+            <i class="bi bi-calendar-plus-fill me-3"></i> Registrar Permiso
         </a>
         <a href="#collapseReportes" class="nav-link" data-bs-toggle="collapse" role="button">
             <i class="bi bi-file-earmark-spreadsheet-fill me-3"></i> Reportes Excel
         </a>
         
         <div class="section-label">Control de Acceso</div>
+        <a href="#collapseSync" class="nav-link" data-bs-toggle="collapse" role="button">
+            <i class="bi bi-clock-history me-3"></i> Sincronizar Hora
+        </a>
         <a href="#" class="nav-link text-warning" data-bs-toggle="modal" data-bs-target="#modalApertura">
             <i class="bi bi-unlock-fill me-3"></i> Apertura Forzada
         </a>
@@ -65,6 +73,8 @@
     </div>
 </div>
 
+{% include 'includes/evidence_modal.html' %}
+
 <div class="container-fluid">
     <!-- KPIs -->
     <div class="row g-3 mb-4 fade-in">
@@ -92,7 +102,7 @@
         <div class="col-6 col-md-3">
             <div class="card border-0 shadow-sm p-3 text-center h-100 border-start border-warning border-4">
                 <div class="small text-muted fw-bold mb-1 text-uppercase" style="font-size: 0.6rem;">Cola</div>
-                <h3 class="fw-bold mb-0 text-dark">0</h3>
+                <h3 class="fw-bold mb-0 text-dark" id="command-queue-count">0</h3>
                 <div class="extra-small text-muted">Comandos</div>
             </div>
         </div>
@@ -121,11 +131,41 @@
             </div>
         </div>
     </div>
+    <div class="collapse mb-4" id="collapsePermiso">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-primary text-white fw-bold py-3"><i class="bi bi-calendar-plus me-2"></i> Registrar Permiso de Docente</div>
+            <div class="card-body p-4 bg-white">
+                <form action="{{ url_for('crear_permiso') }}" method="POST">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">Docente</label>
+                            <select name="docente_id" class="form-select" required>
+                                <option value="" disabled selected>Seleccione un docente</option>
+                                {% for d in docentes %}<option value="{{ d.id }}">{{ d.nombre }}</option>{% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">Fecha del Permiso</label>
+                            <input type="date" name="fecha_permiso" class="form-control" required>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label small fw-bold">Observación (Opcional)</label>
+                            <textarea name="observacion" class="form-control" rows="2" placeholder="Ej. Cita médica, comisión, etc."></textarea>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary w-100 mt-4 py-2 fw-bold rounded-pill shadow">GUARDAR PERMISO</button>
+                </form>
+            </div>
+        </div>
+    </div>
 
     <div class="collapse mb-4" id="collapseReportes">
         <div class="card shadow-sm border-0">
-            <div class="card-header bg-dark text-white fw-bold py-3">📊 Generar Reporte de Asistencia (Excel)</div>
+            <div class="card-header bg-dark text-white fw-bold py-3">📊 Generar Reportes (Excel)</div>
             <div class="card-body p-4 bg-white">
+                <!-- Reporte de Asistencia -->
+                <h6 class="text-primary fw-bold">Reporte de Asistencia</h6>
+                <hr>
                 <form action="{{ url_for('descargar_reporte_matricial') }}" method="GET">
                     <div class="row g-3">
                         <div class="col-md-4"><label class="form-label small fw-bold">Fecha Inicio</label><input type="date" name="fecha_inicio" class="form-control"></div>
@@ -136,8 +176,65 @@
                                 {% for d in docentes %}<option value="{{ d.biometric_id }}">{{ d.nombre }}</option>{% endfor %}
                             </select>
                         </div>
+                        <div class="col-12 mt-3">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <label class="form-label small fw-bold">Jornada Mañana</label>
+                                    <div class="input-group">
+                                        <input type="time" name="hora_inicio_m" class="form-control" value="07:00">
+                                        <input type="time" name="hora_fin_m" class="form-control" value="13:00">
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small fw-bold">Jornada Tarde</label>
+                                    <div class="input-group">
+                                        <input type="time" name="hora_inicio_t" class="form-control" value="13:01">
+                                        <input type="time" name="hora_fin_t" class="form-control" value="22:00">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                    <button class="btn btn-primary w-100 mt-4 py-2 fw-bold rounded-pill shadow">DESCARGAR REPORTE MATRICIAL</button>
+                    <button class="btn btn-primary w-100 mt-3 py-2 fw-bold rounded-pill shadow">DESCARGAR REPORTE MATRICIAL</button>
+                </form>
+
+                <!-- Reporte de Permisos -->
+                <h6 class="text-primary fw-bold mt-5">Reporte de Permisos</h6>
+                <hr>
+                <form action="{{ url_for('descargar_reporte_permisos') }}" method="GET">
+                    <div class="row g-3">
+                        <div class="col-md-4"><label class="form-label small fw-bold">Fecha Inicio</label><input type="date" name="fecha_inicio_permiso" class="form-control"></div>
+                        <div class="col-md-4"><label class="form-label small fw-bold">Fecha Fin</label><input type="date" name="fecha_fin_permiso" class="form-control"></div>
+                        <div class="col-md-4"><label class="form-label small fw-bold">Docente</label>
+                            <select name="docente_id_permiso" class="form-select">
+                                <option value="todos">Todos</option>
+                                {% for d in docentes %}<option value="{{ d.id }}">{{ d.nombre }}</option>{% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <button class="btn btn-secondary w-100 mt-3 py-2 fw-bold rounded-pill shadow">DESCARGAR REPORTE DE PERMISOS</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- SECCIÓN SINCRONIZAR HORA -->
+    <div class="collapse mb-4" id="collapseSync">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-info text-white fw-bold py-3"><i class="bi bi-clock-fill me-2"></i> Sincronizar Hora del Biométrico</div>
+            <div class="card-body p-4 bg-white">
+                <form action="{{ url_for('admin_sincronizar_hora') }}" method="POST">
+                    <p class="small text-muted">Use esta herramienta para forzar la fecha y hora del dispositivo biométrico. Se recomienda usar la hora actual del servidor para mantener la consistencia.</p>
+                    <div class="row g-3 align-items-end">
+                        <div class="col-md-8">
+                            <label class="form-label small fw-bold">Fecha y Hora a Establecer</label>
+                            <input type="datetime-local" id="datetime-sync" name="new_time" class="form-control" required>
+                        </div>
+                        <div class="col-md-4">
+                            <button type="button" class="btn btn-outline-secondary w-100" onclick="setCurrentTime()">Usar Hora Actual</button>
+                        </div>
+                    </div>
+                    <button class="btn btn-info w-100 mt-4 py-2 fw-bold rounded-pill shadow text-white">ENVIAR COMANDO DE SINCRONIZACIÓN</button>
                 </form>
             </div>
         </div>
@@ -162,6 +259,7 @@
                                 <th>Docente</th>
                                 <th>Evento</th>
                                 <th class="text-center">Vía</th>
+                                <th>Evidencia</th>
                             </tr>
                         </thead>
                         <tbody id="live-logs-body"></tbody>
@@ -198,7 +296,7 @@
                             </div>
                             <div class="btn-group">
                                 <a href="{{ url_for('editar_docente', id=d.id) }}" class="btn btn-sm btn-light border" title="Editar"><i class="bi bi-pencil text-primary"></i></a>
-                                <a href="{{ url_for('eliminar_docente', id=d.id) }}" class="btn btn-sm btn-light border text-danger" onclick="return confirm('¿Seguro de eliminar este docente?')" title="Eliminar"><i class="bi bi-trash"></i></a>
+                                <a href="{{ url_for('eliminar_docente', id=d.id) }}" class="btn btn-sm btn-light border text-danger" onclick="return confirm('¿Seguro de eliminar este docente?')"><i class="bi bi-trash"></i></a>
                             </div>
                         </div>
                     </div>
@@ -223,28 +321,49 @@
         const body = document.getElementById('live-logs-body');
         const ind = document.getElementById('live-indicator');
         const hoyDisplay = document.getElementById('count-hoy');
+        const queueDisplay = document.getElementById('command-queue-count');
         
         try {
             ind.style.opacity = '1';
-            const res = await fetch('/api/logs');
-            const logs = await res.json();
+            const res = await fetch('/api/logs_admin');
+            const data = await res.json();
             
             const hoy = new Date().toISOString().split('T')[0];
-            const logsHoy = logs.filter(l => l.fecha.includes(hoy)).length;
+            const logsHoy = data.logs.filter(l => l.fecha.includes(hoy)).length;
             hoyDisplay.innerText = logsHoy;
+            queueDisplay.innerText = data.queue_length;
 
-            body.innerHTML = logs.map(l => {
+            body.innerHTML = data.logs.map(l => {
                 const [f, h] = l.fecha.split(' ');
                 const icon = l.origen === "Huella" ? "bi-cpu text-info" : "bi-laptop text-primary";
                 let badge = "bg-primary";
                 if(l.tipo_evento.toLowerCase().includes("puerta")) badge = "bg-success";
                 if(l.tipo_evento.toLowerCase().includes("remota")) badge = "bg-danger";
 
+                let evidenciaHtml = '-';
+                if (l.origen === 'Asistencia remota' && (l.lat || l.foto || l.desc)) {
+                    const escapedDesc = l.desc ? l.desc.replace(/'/g, "&apos;").replace(/"/g, "&quot;") : '';
+                    evidenciaHtml = `<button 
+                                        class="btn btn-sm btn-outline-primary border-0" 
+                                        data-bs-toggle="modal" 
+                                        data-bs-target="#evidenceDetailModal"
+                                        data-user="${l.nombre}"
+                                        data-date="${l.fecha}"
+                                        data-desc="${escapedDesc}"
+                                        data-lat="${l.lat || ''}"
+                                        data-lon="${l.lon || ''}"
+                                        data-foto="${l.foto || ''}"
+                                        title="Ver detalles de la evidencia">
+                                            <i class="bi bi-eye-fill"></i>
+                                     </button>`;
+                }
+
                 return `<tr>
                     <td class="ps-4 mono small"><b>${h}</b><br><span class="text-muted extra-small">${f}</span></td>
                     <td class="small fw-bold text-dark">${l.nombre}</td>
                     <td><span class="badge ${badge} bg-opacity-10 text-dark border-0 px-3 extra-small fw-bold shadow-sm">${l.tipo_evento}</span></td>
                     <td class="text-center"><i class="bi ${icon} fs-5" title="${l.origen}"></i></td>
+                    <td class="text-center">${evidenciaHtml}</td>
                 </tr>`;
             }).join('');
         } catch (e) {
@@ -300,6 +419,15 @@
         } catch(e) {
             cb.checked = !cb.checked;
         }
+    }
+
+    /**
+     * Helper para Sincronización de Hora
+     */
+    function setCurrentTime() {
+        const now = new Date();
+        now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+        document.getElementById('datetime-sync').value = now.toISOString().slice(0,16);
     }
 
     setInterval(actualizarMonitor, 3500);
