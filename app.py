@@ -1,5 +1,6 @@
 import os
 import io
+import uuid
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
@@ -13,7 +14,7 @@ import config
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = config.SECRET_KEY
-app.config['UPLOAD_FOLDER'] = 'uploads'
+app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
 
 # --- CONFIGURACIÓN DE BASE DE DATOS (MYSQL) ---
 app.config['SQLALCHEMY_DATABASE_URI'] = config.SQLALCHEMY_DATABASE_URI
@@ -75,7 +76,14 @@ def init_db():
         
         if not User.query.filter_by(username='admin').first():
             hashed_pw = generate_password_hash('istae123A*', method='pbkdf2:sha256')
-            admin = User(biometric_id='999', nombre='Admin Principal', username='admin', password=hashed_pw, rol='admin', acceso_puerta=1)
+            admin = User(
+                biometric_id='999', 
+                nombre='Admin Principal', 
+                username='admin', 
+                password=hashed_pw, 
+                rol='admin', 
+                acceso_puerta=1
+            )
             db.session.add(admin)
             db.session.commit()
 
@@ -99,16 +107,29 @@ def api_recibir_log():
 
     if fecha_str:
         try:
+            # Reemplazar la T del estándar ISO 8601 por un espacio
             fecha_limpia = fecha_str.replace('T', ' ')
+            # Eliminar posibles compensaciones de zona horaria si vienen del biométrico
+            if '-' in fecha_limpia[10:]:
+                fecha_limpia = fecha_limpia.split('-')[0]
+            elif '+' in fecha_limpia[10:]:
+                fecha_limpia = fecha_limpia.split('+')[0]
+                
             fecha_log = datetime.strptime(fecha_limpia[:19], "%Y-%m-%d %H:%M:%S")
-        except:
+            # Localizar el datetime a la zona horaria de Ecuador
+            fecha_log = tz_ecu.localize(fecha_log)
+        except Exception as e:
+            print(f"Error parseando fecha recibida: {e}")
             fecha_log = None
 
     if fecha_log is None:
         fecha_log = datetime.now(tz_ecu)
 
+    # Convertir a datetime ingenuo (naive) representando la hora local de Ecuador para guardarlo en MySQL
+    fecha_log_naive = fecha_log.replace(tzinfo=None)
+
     nuevo_log = Log(
-        fecha=fecha_log,
+        fecha=fecha_log_naive,
         usuario_id=data.get('id'),
         tipo_evento="Asistencia + puerta",
         origen="Huella"
@@ -119,11 +140,12 @@ def api_recibir_log():
 
 @app.route('/api/check_comando')
 def api_check_comando():
+    # Obtener el comando pendiente más antiguo de manera secuencial
     cmd = Comando.query.filter_by(estado='PENDIENTE').order_by(Comando.id.asc()).first()
     if cmd:
         cmd.estado = 'ENVIADO'
         db.session.commit()
-        return cmd.instruccion
+        return cmd.instruccion # <--- Retorna la instrucción exacta (ABRIR, SET_TIME|...) sin hardcodear
     return "NADA"
 
 # --- VISTAS Y DASHBOARDS ---
@@ -135,7 +157,8 @@ def index():
 @app.route('/admin/dashboard')
 @login_required
 def admin_dashboard():
-    if current_user.rol != 'admin': return redirect(url_for('docente_dashboard'))
+    if current_user.rol != 'admin': 
+        return redirect(url_for('docente_dashboard'))
     docentes = User.query.filter_by(rol='docente').all()
     return render_template('admin.html', docentes=docentes)
 
@@ -162,7 +185,7 @@ def uploaded_file(filename):
 def admin_abrir():
     db.session.add(Comando(instruccion='ABRIR'))
     db.session.add(Log(
-        fecha=datetime.now(pytz.timezone('America/Guayaquil')),
+        fecha=datetime.now(pytz.timezone('America/Guayaquil')).replace(tzinfo=None),
         usuario_id=current_user.biometric_id,
         tipo_evento="Apertura Remota",
         origen="Panel Control"
@@ -174,20 +197,33 @@ def admin_abrir():
 @app.route('/admin/sincronizar_hora', methods=['POST'])
 @login_required
 def admin_sincronizar_hora():
-    if current_user.rol != 'admin': return redirect(url_for('index'))
+    if current_user.rol != 'admin': 
+        return redirect(url_for('index'))
     
     time_str = request.form.get('new_time')
+    tz_ecu = pytz.timezone('America/Guayaquil')
+    
     if time_str:
         try:
+            # Parsear la hora ingresada por el administrador en la interfaz web
             dt_obj = datetime.strptime(time_str, '%Y-%m-%dT%H:%M')
-            iso_time = dt_obj.strftime('%Y-%m-%dT%H:%M:%S-05:00')
+            dt_obj = tz_ecu.localize(dt_obj)
+            iso_time = dt_obj.strftime('%Y-%m-%dT%H:%M:%S')
             
+            # Encolar comando con la hora manual seleccionada
             comando_str = f"SET_TIME|{iso_time}"
             db.session.add(Comando(instruccion=comando_str))
             db.session.commit()
-            flash(f'Comando de sincronización de hora ({iso_time}) enviado al dispositivo.', 'info')
+            flash(f'Comando de sincronización de hora manual ({iso_time}) enviado al dispositivo.', 'info')
         except ValueError:
             flash('Formato de fecha y hora inválido.', 'danger')
+    else:
+        # Enviar automáticamente la hora del servidor corregida al huso horario de Ecuador
+        hora_actual = datetime.now(tz_ecu).strftime('%Y-%m-%dT%H:%M:%S')
+        comando_str = f"SET_TIME|{hora_actual}"
+        db.session.add(Comando(instruccion=comando_str))
+        db.session.commit()
+        flash(f'Comando de sincronización con hora actual de Ecuador ({hora_actual}) enviado.', 'success')
 
     return redirect(url_for('admin_dashboard') + '#collapseSync')
 
@@ -197,7 +233,7 @@ def docente_abrir():
     if current_user.acceso_puerta == 1:
         db.session.add(Comando(instruccion='ABRIR'))
         db.session.add(Log(
-            fecha=datetime.now(pytz.timezone('America/Guayaquil')),
+            fecha=datetime.now(pytz.timezone('America/Guayaquil')).replace(tzinfo=None),
             usuario_id=current_user.biometric_id,
             tipo_evento="Apertura Remota",
             origen="Asistencia remota"
@@ -222,11 +258,12 @@ def docente_marcar():
 
         filename = None
         if foto and foto.filename != '':
-            filename = secure_filename(f"{current_user.id}_{datetime.now().strftime('%Y%m%d%H%M%S')}_{foto.filename}")
+            ext = os.path.splitext(secure_filename(foto.filename))[1]
+            filename = f"{current_user.id}_{datetime.now().strftime('%Y%m%d%H%M%S')}{ext}"
             foto.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
 
         nuevo_log = Log(
-            fecha=datetime.now(pytz.timezone('America/Guayaquil')),
+            fecha=datetime.now(pytz.timezone('America/Guayaquil')).replace(tzinfo=None),
             usuario_id=current_user.biometric_id,
             tipo_evento="Asistencia",
             origen="Asistencia remota",
@@ -240,7 +277,6 @@ def docente_marcar():
         flash('Asistencia remota registrada con éxito.', 'success')
         return redirect(url_for('docente_dashboard'))
 
-    # Si es GET, simplemente renderiza la misma página (la lógica del modal se encarga)
     return redirect(url_for('docente_dashboard'))
 
 # --- GESTIÓN DE ASISTENCIAS Y PERMISOS ---
@@ -264,7 +300,6 @@ def gestion_asistencia():
         end_dt = datetime.strptime(fecha_fin_str, '%Y-%m-%d')
         query = query.filter(Log.fecha <= end_dt + timedelta(days=1))
     if docente_id_filtro and docente_id_filtro != 'todos':
-        # Assuming docente_id in filter is the User ID
         user_filter = db.session.get(User, docente_id_filtro)
         if user_filter:
             query = query.filter(Log.usuario_id == user_filter.biometric_id)
@@ -281,7 +316,8 @@ def gestion_asistencia():
 @app.route('/admin/asistencia/editar/<int:id>', methods=['GET'])
 @login_required
 def editar_asistencia(id):
-    if current_user.rol != 'admin': return redirect(url_for('index'))
+    if current_user.rol != 'admin': 
+        return redirect(url_for('index'))
     
     log = db.session.get(Log, id)
     if not log:
@@ -296,7 +332,8 @@ def editar_asistencia(id):
 @app.route('/admin/asistencia/actualizar', methods=['POST'])
 @login_required
 def actualizar_asistencia():
-    if current_user.rol != 'admin': return redirect(url_for('index'))
+    if current_user.rol != 'admin': 
+        return redirect(url_for('index'))
 
     log_id = request.form.get('log_id')
     log = db.session.get(Log, log_id)
@@ -321,13 +358,16 @@ def actualizar_asistencia():
 @app.route('/admin/asistencia/eliminar/<int:id>')
 @login_required
 def eliminar_asistencia(id):
-    if current_user.rol != 'admin': return redirect(url_for('index'))
+    if current_user.rol != 'admin': 
+        return redirect(url_for('index'))
 
     log = db.session.get(Log, id)
     if log:
         if log.foto_path:
             try:
-                os.remove(os.path.join(app.config['UPLOAD_FOLDER'], log.foto_path))
+                ruta_foto = os.path.join(app.config['UPLOAD_FOLDER'], log.foto_path)
+                if os.path.exists(ruta_foto):
+                    os.remove(ruta_foto)
             except OSError as e:
                 flash(f'Error al eliminar la foto de evidencia: {e}', 'warning')
         
@@ -440,7 +480,6 @@ def crear_permiso():
     flash('Permiso registrado correctamente.', 'success')
     return redirect(url_for('admin_dashboard'))
 
-
 @app.route('/admin/permiso/editar/<int:id>', methods=['GET'])
 @login_required
 def editar_permiso(id):
@@ -454,7 +493,6 @@ def editar_permiso(id):
 
     docentes = User.query.filter_by(rol='docente').all()
     return render_template('editar_permiso.html', permiso=permiso, docentes=docentes)
-
 
 @app.route('/admin/permiso/actualizar', methods=['POST'])
 @login_required
@@ -484,7 +522,6 @@ def actualizar_permiso():
     db.session.commit()
     flash('Permiso actualizado correctamente.', 'success')
     return redirect(url_for('gestion_permisos'))
-
 
 @app.route('/admin/permiso/eliminar/<int:id>')
 @login_required
@@ -573,7 +610,8 @@ def descargar_reporte_permisos():
 @app.route('/descargar_reporte_matricial')
 @login_required
 def descargar_reporte_matricial():
-    if current_user.rol != 'admin': return redirect(url_for('index'))
+    if current_user.rol != 'admin': 
+        return redirect(url_for('index'))
     
     # --- Filtros de Fecha y Docente ---
     fecha_ini_str = request.args.get('fecha_inicio')
@@ -667,7 +705,8 @@ def descargar_reporte_matricial():
         row_idx += 1
 
     ws.column_dimensions['B'].width = 30
-    for i in range(4, 4 + len(dias_reporte)): ws.column_dimensions[ws.cell(row=2, column=i).column_letter].width = 22
+    for i in range(4, 4 + len(dias_reporte)): 
+        ws.column_dimensions[ws.cell(row=2, column=i).column_letter].width = 22
 
     output = io.BytesIO()
     wb.save(output)
@@ -685,8 +724,7 @@ def get_logs_admin_json():
     
     res = []
     for log, user in logs_data:
-        # Manejo robusto de usuarios que podrían no existir en la tabla 'usuarios'
-        nombre_usuario = f"ID Huella: {log.usuario_id}"  # Texto por defecto
+        nombre_usuario = f"ID Huella: {log.usuario_id}"
         if user:
             nombre_usuario = user.nombre
 
