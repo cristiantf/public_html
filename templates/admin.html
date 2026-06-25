@@ -86,16 +86,21 @@
             </div>
         </div>
         <div class="col-6 col-md-3">
-            <div class="card border-0 shadow-sm p-3 text-center h-100 border-start border-success border-4">
+            <div id="hardware-status-card" class="card border-0 shadow-sm p-3 text-center h-100 border-start {% if hardware_online %}border-success{% else %}border-danger{% endif %} border-4">
                 <div class="small text-muted fw-bold mb-1 text-uppercase" style="font-size: 0.6rem;">Estado Hardware</div>
+                {% if hardware_online %}
                 <h3 class="fw-bold mb-0 text-success"><i class="bi bi-wifi"></i></h3>
-                <div class="extra-small text-muted">En línea</div>
+                <div class="extra-small text-success fw-bold">En línea</div>
+                {% else %}
+                <h3 class="fw-bold mb-0 text-danger"><i class="bi bi-wifi-off"></i></h3>
+                <div class="extra-small text-danger fw-bold">Desconectado</div>
+                {% endif %}
             </div>
         </div>
         <div class="col-6 col-md-3">
             <div class="card border-0 shadow-sm p-3 text-center h-100 border-start border-info border-4">
                 <div class="small text-muted fw-bold mb-1 text-uppercase" style="font-size: 0.6rem;">Hoy</div>
-                <h3 class="fw-bold mb-0 text-info" id="count-hoy">--</h3>
+                <h3 class="fw-bold mb-0 text-info" id="count-hoy">{{ marcaciones_hoy }}</h3>
                 <div class="extra-small text-muted">Marcaciones</div>
             </div>
         </div>
@@ -201,10 +206,23 @@
             const res = await fetch('/api/logs_admin');
             const data = await res.json();
             
-            const hoy = new Date().toISOString().split('T')[0];
-            const logsHoy = data.logs.filter(l => l.fecha.includes(hoy)).length;
-            hoyDisplay.innerText = logsHoy;
+            hoyDisplay.innerText = data.marcaciones_hoy;
             queueDisplay.innerText = data.queue_length;
+            
+            const hardwareStatusCard = document.getElementById('hardware-status-card');
+            if (hardwareStatusCard) {
+                if (data.hardware_online) {
+                    hardwareStatusCard.className = "card border-0 shadow-sm p-3 text-center h-100 border-start border-success border-4";
+                    hardwareStatusCard.innerHTML = `<div class="small text-muted fw-bold mb-1 text-uppercase" style="font-size: 0.6rem;">Estado Hardware</div>
+                        <h3 class="fw-bold mb-0 text-success"><i class="bi bi-wifi"></i></h3>
+                        <div class="extra-small text-success fw-bold">En línea</div>`;
+                } else {
+                    hardwareStatusCard.className = "card border-0 shadow-sm p-3 text-center h-100 border-start border-danger border-4";
+                    hardwareStatusCard.innerHTML = `<div class="small text-muted fw-bold mb-1 text-uppercase" style="font-size: 0.6rem;">Estado Hardware</div>
+                        <h3 class="fw-bold mb-0 text-danger"><i class="bi bi-wifi-off"></i></h3>
+                        <div class="extra-small text-danger fw-bold">Desconectado</div>`;
+                }
+            }
 
             body.innerHTML = data.logs.map(l => {
                 const [f, h] = l.fecha.split(' ');

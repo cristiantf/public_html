@@ -89,14 +89,38 @@ def init_db():
 
 init_db()
 
+# --- TRACK HARDWARE STATUS ---
+import time
+import os
+
+def update_hardware_seen():
+    try:
+        with open('last_seen.txt', 'w') as f:
+            f.write(str(time.time()))
+    except Exception as e:
+        pass
+
+def get_hardware_status():
+    try:
+        with open('last_seen.txt', 'r') as f:
+            last_seen = float(f.read().strip())
+        # Considerar offline si no se comunica en más de 60 segundos
+        if time.time() - last_seen < 60:
+            return True
+    except:
+        pass
+    return False
+
 # --- API PARA HARDWARE (IOT) ---
 @app.route('/api/sincronizar')
 def api_sincronizar():
+    update_hardware_seen()
     usuarios = User.query.filter_by(acceso_puerta=1).all()
     return ",".join([str(u.biometric_id) for u in usuarios])
 
 @app.route('/api/recibir_log', methods=['POST'])
 def api_recibir_log():
+    update_hardware_seen()
     data = request.json
     if not data or data.get('token') != config.TOKEN_NODE:
         return jsonify({"status": "error", "message": "Token inválido"}), 403
@@ -140,6 +164,7 @@ def api_recibir_log():
 
 @app.route('/api/check_comando')
 def api_check_comando():
+    update_hardware_seen()
     # Obtener el comando pendiente más antiguo de manera secuencial
     cmd = Comando.query.filter_by(estado='PENDIENTE').order_by(Comando.id.asc()).first()
     if cmd:
@@ -159,8 +184,16 @@ def index():
 def admin_dashboard():
     if current_user.rol != 'admin': 
         return redirect(url_for('docente_dashboard'))
+        
+    tz_ecu = pytz.timezone('America/Guayaquil')
+    hoy_inicio = datetime.now(tz_ecu).replace(hour=0, minute=0, second=0, microsecond=0)
+    hoy_fin = hoy_inicio.replace(hour=23, minute=59, second=59)
+    marcaciones_hoy = Log.query.filter(Log.fecha >= hoy_inicio.replace(tzinfo=None), Log.fecha <= hoy_fin.replace(tzinfo=None)).count()
+    
+    hardware_online = get_hardware_status()
+    
     docentes = User.query.filter_by(rol='docente').all()
-    return render_template('admin.html', docentes=docentes)
+    return render_template('admin.html', docentes=docentes, marcaciones_hoy=marcaciones_hoy, hardware_online=hardware_online)
 
 @app.route('/docente/dashboard')
 @login_required
@@ -780,7 +813,18 @@ def get_logs_admin_json():
     
     queue_len = Comando.query.filter_by(estado='PENDIENTE').count()
     
-    return jsonify(logs=res, queue_length=queue_len)
+    tz_ecu = pytz.timezone('America/Guayaquil')
+    hoy_inicio = datetime.now(tz_ecu).replace(hour=0, minute=0, second=0, microsecond=0)
+    hoy_fin = hoy_inicio.replace(hour=23, minute=59, second=59)
+    marcaciones_hoy = Log.query.filter(Log.fecha >= hoy_inicio.replace(tzinfo=None), Log.fecha <= hoy_fin.replace(tzinfo=None)).count()
+    hardware_online = get_hardware_status()
+    
+    return jsonify(
+        logs=res, 
+        queue_length=queue_len,
+        marcaciones_hoy=marcaciones_hoy,
+        hardware_online=hardware_online
+    )
 
 @app.route('/toggle_permiso/<int:id>', methods=['POST'])
 @login_required
