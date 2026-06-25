@@ -1,47 +1,45 @@
 # Estado Actual del Proyecto: Sistema de Control de Acceso ISTAE
 
 ## 1. Resumen de Madurez
-El proyecto es una solución funcional e integral de extremo a extremo que involucra **hardware IoT (ESP8266/NodeMCU)** y un **backend web (Python/Flask)**. Actualmente, el proyecto cuenta con un estado de desarrollo maduro, abordando tanto los casos de uso principales como escenarios secundarios (por ejemplo, pérdida de conectividad en el hardware o asistencias remotas).
+El proyecto es una solución funcional e integral de extremo a extremo que involucra **hardware IoT (ESP8266/NodeMCU)** y un **backend web (Python/Flask)**. Tras una reciente e intensiva refactorización, el proyecto cuenta con una arquitectura web escalable, donde las cargas de trabajo (formularios, listados) han sido separadas de manera estructurada, optimizando la memoria mediante paginación y mejorando la visualización en tiempo real.
 
 ## 2. Componentes y su Estado
 
 ### 2.1 Backend Web (Flask)
-- **Estado:** Completamente implementado y en funcionamiento.
+- **Estado:** Completamente implementado, refactorizado y en funcionamiento.
 - **Funcionalidades:** 
   - Gestión de sesiones y roles de usuario (`admin`, `docente`).
-  - Creación, edición y eliminación de docentes.
-  - Registro de logs (presenciales y remotos).
-  - API REST para la comunicación con el dispositivo NodeMCU.
+  - Creación, edición y eliminación de docentes a través de vistas dedicadas.
+  - Gestión de logs de asistencias y permisos **con paginación del lado del servidor** (ej: últimas 30 asistencias por página) para prevenir el agotamiento de memoria del servidor al escalar la base de datos.
+  - Vistas administrativas completamente modularizadas (`/admin/nuevo_docente`, `/admin/reportes`, `/admin/sincronizar_hora`, etc.) con métodos GET/POST limpios.
   - Generación de reportes dinámicos en Excel mediante `openpyxl`.
-- **Estructura del Código:** El backend se encuentra en su mayoría centralizado en un único archivo (`app.py`), el cual contiene cerca de 800 líneas. Gestiona modelos de base de datos, inicialización, vistas, API REST y reportes.
+  - Panel de control (Dashboard) con cálculo de métricas reales (Total de marcaciones diarias) y visualización del estado de conexión del Hardware (Online/Offline) basado en su último ping al servidor.
 
 ### 2.2 Hardware / Firmware IoT (C++ NodeMCU)
 - **Estado:** Desarrollado y configurado (`node.ino`).
 - **Funcionalidades:**
   - Configuración automática de WiFi vía `WiFiManager`.
-  - Captura y validación de usuarios mediante listas blancas, activando un relé si hay coincidencias.
-  - Sincronización en la nube mediante solicitudes HTTP regulares (`/api/sincronizar` y `/api/check_comando`).
-  - Resiliencia offline: Almacena logs de acceso fallidos localmente en `LittleFS` y los encola cuando vuelve el WiFi.
+  - Validación de usuarios mediante listas blancas, activando relé.
+  - Ping y actualización constante con los endpoints (`/api/check_comando` y `/api/recibir_log`) que permiten al servidor medir su conectividad en tiempo real (umbral de 60 segundos).
+  - Resiliencia offline con colas de reintentos mediante `LittleFS`.
 
 ### 2.3 Base de Datos (MySQL)
 - **Estado:** Esquema relacional implementado con SQLAlchemy.
-- **Modelos Principales:** `User` (credenciales y configuración del docente), `Log` (eventos de acceso), `Comando` (órdenes encoladas para el NodeMCU) y `Permiso` (permisos de inasistencias o especiales).
+- **Modelos Principales:** `User`, `Log`, `Comando` y `Permiso`.
 
 ### 2.4 Interfaz de Usuario (Frontend)
 - **Estado:** Completado, usando plantillas Jinja2 y Bootstrap 5.
-- **Funcionalidades:** Modal con uso de API de Geolocalización y captura de cámara para las "asistencias remotas", adaptabilidad móvil.
+- **Funcionalidades:** 
+  - Dashboard central con monitor asíncrono (AJAX) que actualiza tabla de logs, conteo diario y estado del NodeMCU cada 3.5 segundos.
+  - Diseño unificado y elegante incluyendo el logotipo institucional en Favicon, Panel y Login.
+  - Barra lateral de navegación adaptativa que unifica todas las sub-vistas del administrador.
 
 ## 3. Puntos Fuertes del Sistema
-1. **Resiliencia ante caídas de red:** La implementación de memoria local en el hardware (LittleFS) previene pérdida de datos.
-2. **Sistema Híbrido:** Proporciona un mecanismo presencial (Biométrico) y un mecanismo remoto seguro (Geolocalización + Foto).
-3. **Control Desacoplado de Puerta:** El hardware hace polling (sondeo) constante, lo que permite abrir la puerta a distancia sin necesidad de configuraciones complicadas de reenvío de puertos.
+1. **Resiliencia ante caídas de red:** Memoria local en hardware y rastreo de conexión offline desde la interfaz web.
+2. **Escalabilidad Visual y de Memoria:** El desacoplamiento de formularios a vistas independientes y la inclusión de paginación preparan al sistema para soportar millones de registros sin penalizaciones de RAM.
+3. **Control Desacoplado de Puerta:** El hardware hace polling constante sin necesitar apertura de puertos en el router local.
 
 ## 4. Áreas de Mejora y Deuda Técnica
-1. **Refactorización de `app.py`:** A medida que creció el sistema, el enrutamiento, la configuración y los modelos se mantuvieron en `app.py`. Es muy recomendable usar **Flask Blueprints** para separar:
-   - `auth/` (Login y usuarios)
-   - `api/` (Endpoints para el NodeMCU)
-   - `admin/` (Panel y reportes de administrador)
-   - `docente/` (Vistas para los usuarios estándar)
-2. **Seguridad del Token IoT:** Actualmente, `TOKEN_NODE` se envía estáticamente. Si la red no utiliza HTTPS, esto podría ser propenso a interceptación. El hardware usa `client.setInsecure()`, lo que invalida la validación de certificados SSL.
-3. **Zona Horaria y Geolocalización:** Aunque el servidor implementa la corrección a la zona `America/Guayaquil`, la validación de coordenadas (geocercas) es muy permisiva y queda a juicio del revisor (admin).
-4. **Testing Automático:** No hay un conjunto definido de tests unitarios automáticos (`pytest` o similar). Las pruebas se realizan por scripts manuales (`biometrico_driver.py`).
+1. **Refactorización de `app.py` mediante Blueprints:** Aunque las rutas se desacoplaron lógicamente a vistas dedicadas en el HTML, todas las funciones siguen en el archivo maestro `app.py`. En el futuro, se recomienda estructurar mediante Flask Blueprints.
+2. **Testing Automático:** Las pruebas actuales son mayoritariamente manuales; implementar `pytest` para las APIs críticas sería ideal.
+3. **Caché en BD:** Si los datos siguen creciendo, la cuenta de marcaciones diarias en tiempo real en SQL podría causar un cuello de botella. Se sugiere el uso futuro de una capa de Redis.
