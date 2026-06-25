@@ -290,6 +290,7 @@ def gestion_asistencia():
     fecha_ini_str = request.args.get('fecha_inicio')
     fecha_fin_str = request.args.get('fecha_fin')
     docente_id_filtro = request.args.get('docente_id')
+    page = request.args.get('page', 1, type=int)
 
     query = db.session.query(Log, User).outerjoin(User, Log.usuario_id == User.biometric_id).order_by(Log.fecha.desc())
 
@@ -304,13 +305,18 @@ def gestion_asistencia():
         if user_filter:
             query = query.filter(Log.usuario_id == user_filter.biometric_id)
 
-    logs_data = query.all()
+    pagination = query.paginate(page=page, per_page=30, error_out=False)
+    logs_data = pagination.items
     docentes = User.query.filter_by(rol='docente').all()
+
+    filtros = request.args.to_dict()
+    filtros.pop('page', None)
 
     return render_template('gestion_asistencia.html', 
                            logs_data=logs_data, 
                            docentes=docentes,
-                           filtros=request.args
+                           filtros=filtros,
+                           pagination=pagination
                            )
 
 @app.route('/admin/asistencia/editar/<int:id>', methods=['GET'])
@@ -388,6 +394,7 @@ def gestion_permisos():
     fecha_ini_str = request.args.get('fecha_inicio')
     fecha_fin_str = request.args.get('fecha_fin')
     docente_id_filtro = request.args.get('docente_id')
+    page = request.args.get('page', 1, type=int)
 
     query = Permiso.query.join(User).order_by(Permiso.fecha_permiso.desc())
 
@@ -400,13 +407,18 @@ def gestion_permisos():
     if docente_id_filtro and docente_id_filtro != 'todos':
         query = query.filter(Permiso.user_id == docente_id_filtro)
 
-    permisos = query.all()
+    pagination = query.paginate(page=page, per_page=20, error_out=False)
+    permisos = pagination.items
     docentes = User.query.filter_by(rol='docente').all()
+
+    filtros = request.args.to_dict()
+    filtros.pop('page', None)
 
     return render_template('gestion_permisos.html', 
                            permisos=permisos, 
                            docentes=docentes,
-                           filtros=request.args
+                           filtros=filtros,
+                           pagination=pagination
                            )
 
 # --- GESTIÓN DOCENTES ---
