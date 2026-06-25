@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}Registrar Permiso{% endblock %}
+
+{% block sidebar %}
+<div class="py-3 h-100 d-flex flex-column">
+    <div class="text-center mb-4 pt-3">
+        <div class="bg-primary d-inline-block p-2 rounded-4 mb-2 shadow">
+            <i class="bi bi-shield-lock-fill fs-2 text-white"></i>
+        </div>
+        <h6 class="text-white fw-bold mt-1 small">SISTEMA ISTAE</h6>
+    </div>
+    
+    <div class="nav flex-column flex-grow-1">
+        <div class="section-label">General</div>
+        <a href="{{ url_for('admin_dashboard') }}" class="nav-link"><i class="bi bi-grid-fill me-3"></i> Dashboard</a>
+        <a href="{{ url_for('gestion_asistencia') }}" class="nav-link"><i class="bi bi-calendar-range-fill me-3"></i> Gestión de Asistencia</a>
+        <a href="{{ url_for('gestion_permisos') }}" class="nav-link"><i class="bi bi-calendar-check-fill me-3"></i> Gestión de Permisos</a>
+
+        <div class="section-label">Gestión Docente</div>
+        <a href="{{ url_for('nuevo_docente') }}" class="nav-link"><i class="bi bi-person-plus-fill me-3"></i> Nuevo Registro</a>
+        <a href="{{ url_for('nuevo_permiso') }}" class="nav-link active"><i class="bi bi-calendar-plus-fill me-3"></i> Registrar Permiso</a>
+        <a href="{{ url_for('reportes') }}" class="nav-link"><i class="bi bi-file-earmark-spreadsheet-fill me-3"></i> Reportes Excel</a>
+        
+        <div class="section-label">Control de Acceso</div>
+        <a href="{{ url_for('admin_sincronizar_hora') }}" class="nav-link"><i class="bi bi-clock-history me-3"></i> Sincronizar Hora</a>
+        <a href="#" class="nav-link text-warning" data-bs-toggle="modal" data-bs-target="#modalApertura">
+            <i class="bi bi-unlock-fill me-3"></i> Apertura Forzada
+        </a>
+    </div>
+
+    <div class="mt-auto p-3">
+        <hr class="text-white-50">
+        <a href="{{ url_for('logout') }}" class="btn btn-outline-danger w-100 rounded-pill py-2 small fw-bold">
+            <i class="bi bi-box-arrow-right me-2"></i>Cerrar Sesión
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="card border-0 shadow-sm mx-auto" style="max-width: 800px;">
+        <div class="card-header bg-primary text-white fw-bold py-3">
+            <h5 class="mb-0 fw-bold"><i class="bi bi-calendar-plus me-2"></i>Registrar Permiso de Docente</h5>
+        </div>
+        <div class="card-body p-4 bg-white">
+            <form action="{{ url_for('nuevo_permiso') }}" method="POST">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label small fw-bold">Docente</label>
+                        <select name="docente_id" class="form-select" required>
+                            <option value="" disabled selected>Seleccione un docente</option>
+                            {% for d in docentes %}<option value="{{ d.id }}">{{ d.nombre }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small fw-bold">Fecha del Permiso</label>
+                        <input type="date" name="fecha_permiso" class="form-control" required>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label small fw-bold">Observación (Opcional)</label>
+                        <textarea name="observacion" class="form-control" rows="2" placeholder="Ej. Cita médica, comisión, etc."></textarea>
+                    </div>
+                </div>
+                <div class="d-flex justify-content-between mt-4">
+                    <a href="{{ url_for('admin_dashboard') }}" class="btn btn-light rounded-pill px-4 fw-bold shadow-sm">Cancelar</a>
+                    <button class="btn btn-primary px-5 py-2 fw-bold rounded-pill shadow">GUARDAR PERMISO</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

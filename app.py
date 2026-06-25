@@ -194,38 +194,49 @@ def admin_abrir():
     flash('Comando de apertura enviado.', 'danger')
     return redirect(url_for('admin_dashboard'))
 
-@app.route('/admin/sincronizar_hora', methods=['POST'])
+@app.route('/admin/sincronizar_hora', methods=['GET', 'POST'])
 @login_required
 def admin_sincronizar_hora():
     if current_user.rol != 'admin': 
         return redirect(url_for('index'))
     
-    time_str = request.form.get('new_time')
-    tz_ecu = pytz.timezone('America/Guayaquil')
-    
-    if time_str:
-        try:
-            # Parsear la hora ingresada por el administrador en la interfaz web
-            dt_obj = datetime.strptime(time_str, '%Y-%m-%dT%H:%M')
-            dt_obj = tz_ecu.localize(dt_obj)
-            iso_time = dt_obj.strftime('%Y-%m-%dT%H:%M:%S')
-            
-            # Encolar comando con la hora manual seleccionada
-            comando_str = f"SET_TIME|{iso_time}"
+    if request.method == 'POST':
+        time_str = request.form.get('new_time')
+        tz_ecu = pytz.timezone('America/Guayaquil')
+        
+        if time_str:
+            try:
+                # Parsear la hora ingresada por el administrador en la interfaz web
+                dt_obj = datetime.strptime(time_str, '%Y-%m-%dT%H:%M')
+                dt_obj = tz_ecu.localize(dt_obj)
+                iso_time = dt_obj.strftime('%Y-%m-%dT%H:%M:%S')
+                
+                # Encolar comando con la hora manual seleccionada
+                comando_str = f"SET_TIME|{iso_time}"
+                db.session.add(Comando(instruccion=comando_str))
+                db.session.commit()
+                flash(f'Comando de sincronización de hora manual ({iso_time}) enviado al dispositivo.', 'info')
+            except ValueError:
+                flash('Formato de fecha y hora inválido.', 'danger')
+        else:
+            # Enviar automáticamente la hora del servidor corregida al huso horario de Ecuador
+            hora_actual = datetime.now(tz_ecu).strftime('%Y-%m-%dT%H:%M:%S')
+            comando_str = f"SET_TIME|{hora_actual}"
             db.session.add(Comando(instruccion=comando_str))
             db.session.commit()
-            flash(f'Comando de sincronización de hora manual ({iso_time}) enviado al dispositivo.', 'info')
-        except ValueError:
-            flash('Formato de fecha y hora inválido.', 'danger')
-    else:
-        # Enviar automáticamente la hora del servidor corregida al huso horario de Ecuador
-        hora_actual = datetime.now(tz_ecu).strftime('%Y-%m-%dT%H:%M:%S')
-        comando_str = f"SET_TIME|{hora_actual}"
-        db.session.add(Comando(instruccion=comando_str))
-        db.session.commit()
-        flash(f'Comando de sincronización con hora actual de Ecuador ({hora_actual}) enviado.', 'success')
+            flash(f'Comando de sincronización con hora actual de Ecuador ({hora_actual}) enviado.', 'success')
 
-    return redirect(url_for('admin_dashboard') + '#collapseSync')
+        return redirect(url_for('admin_dashboard'))
+
+    return render_template('sincronizar_hora.html')
+
+@app.route('/admin/reportes', methods=['GET'])
+@login_required
+def reportes():
+    if current_user.rol != 'admin':
+        return redirect(url_for('index'))
+    docentes = User.query.filter_by(rol='docente').all()
+    return render_template('reportes.html', docentes=docentes)
 
 @app.route('/docente/abrir_puerta')
 @login_required
@@ -422,19 +433,26 @@ def gestion_permisos():
                            )
 
 # --- GESTIÓN DOCENTES ---
-@app.route('/crear_docente', methods=['POST'])
+@app.route('/admin/nuevo_docente', methods=['GET', 'POST'])
 @login_required
-def crear_docente():
-    hashed = generate_password_hash(request.form['password'], method='pbkdf2:sha256')
-    db.session.add(User(
-        biometric_id=request.form['bio_id'],
-        nombre=request.form['nombre'],
-        username=request.form['username'],
-        password=hashed,
-        acceso_puerta=1 if request.form.get('acceso_puerta') else 0
-    ))
-    db.session.commit()
-    return redirect(url_for('admin_dashboard'))
+def nuevo_docente():
+    if current_user.rol != 'admin':
+        return redirect(url_for('index'))
+    
+    if request.method == 'POST':
+        hashed = generate_password_hash(request.form['password'], method='pbkdf2:sha256')
+        db.session.add(User(
+            biometric_id=request.form['bio_id'],
+            nombre=request.form['nombre'],
+            username=request.form['username'],
+            password=hashed,
+            acceso_puerta=1 if request.form.get('acceso_puerta') else 0
+        ))
+        db.session.commit()
+        flash('Docente creado exitosamente.', 'success')
+        return redirect(url_for('admin_dashboard'))
+        
+    return render_template('nuevo_docente.html')
 
 @app.route('/actualizar_docente', methods=['POST'])
 @login_required
@@ -465,32 +483,40 @@ def editar_docente(id):
     return render_template('editar_docente.html', docente=u)
     
 # --- GESTIÓN DE PERMISOS ---
-@app.route('/admin/permiso/crear', methods=['POST'])
+@app.route('/admin/nuevo_permiso', methods=['GET', 'POST'])
 @login_required
-def crear_permiso():
+def nuevo_permiso():
     if current_user.rol != 'admin':
         return redirect(url_for('index'))
 
-    docente_id = request.form.get('docente_id')
-    fecha_str = request.form.get('fecha_permiso')
-    observacion = request.form.get('observacion')
+    if request.method == 'POST':
+        docente_id = request.form.get('docente_id')
+        fecha_str = request.form.get('fecha_permiso')
+        observacion = request.form.get('observacion')
 
-    if not docente_id or not fecha_str:
-        flash('El docente y la fecha son obligatorios.', 'danger')
-        return redirect(url_for('admin_dashboard') + '#collapsePermiso')
+        if not docente_id or not fecha_str:
+            flash('El docente y la fecha son obligatorios.', 'danger')
+            return redirect(url_for('nuevo_permiso'))
 
-    fecha_obj = datetime.strptime(fecha_str, '%Y-%m-%d').date()
+        try:
+            fecha_obj = datetime.strptime(fecha_str, '%Y-%m-%d').date()
 
-    nuevo_permiso = Permiso(
-        user_id=docente_id,
-        fecha_permiso=fecha_obj,
-        observacion=observacion
-    )
-    db.session.add(nuevo_permiso)
-    db.session.commit()
+            nuevo_permiso = Permiso(
+                user_id=docente_id,
+                fecha_permiso=fecha_obj,
+                observacion=observacion
+            )
+            db.session.add(nuevo_permiso)
+            db.session.commit()
 
-    flash('Permiso registrado correctamente.', 'success')
-    return redirect(url_for('admin_dashboard'))
+            flash('Permiso registrado correctamente.', 'success')
+            return redirect(url_for('admin_dashboard'))
+        except ValueError:
+            flash('Formato de fecha inválido.', 'danger')
+            return redirect(url_for('nuevo_permiso'))
+    
+    docentes = User.query.filter_by(rol='docente').all()
+    return render_template('nuevo_permiso.html', docentes=docentes)
 
 @app.route('/admin/permiso/editar/<int:id>', methods=['GET'])
 @login_required

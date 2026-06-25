@@ -20,18 +20,18 @@
         <a href="{{ url_for('gestion_permisos') }}" class="nav-link"><i class="bi bi-calendar-check-fill me-3"></i> Gestión de Permisos</a>
 
         <div class="section-label">Gestión Docente</div>
-        <a href="#collapseNuevo" class="nav-link" data-bs-toggle="collapse" role="button">
+        <a href="{{ url_for('nuevo_docente') }}" class="nav-link">
             <i class="bi bi-person-plus-fill me-3"></i> Nuevo Registro
         </a>
-        <a href="#collapsePermiso" class="nav-link" data-bs-toggle="collapse" role="button">
+        <a href="{{ url_for('nuevo_permiso') }}" class="nav-link">
             <i class="bi bi-calendar-plus-fill me-3"></i> Registrar Permiso
         </a>
-        <a href="#collapseReportes" class="nav-link" data-bs-toggle="collapse" role="button">
+        <a href="{{ url_for('reportes') }}" class="nav-link">
             <i class="bi bi-file-earmark-spreadsheet-fill me-3"></i> Reportes Excel
         </a>
         
         <div class="section-label">Control de Acceso</div>
-        <a href="#collapseSync" class="nav-link" data-bs-toggle="collapse" role="button">
+        <a href="{{ url_for('admin_sincronizar_hora') }}" class="nav-link">
             <i class="bi bi-clock-history me-3"></i> Sincronizar Hora
         </a>
         <a href="#" class="nav-link text-warning" data-bs-toggle="modal" data-bs-target="#modalApertura">
@@ -109,136 +109,9 @@
     </div>
 
     <!-- SECCIONES COLAPSABLES -->
-    <div class="collapse mb-4" id="collapseNuevo">
-        <div class="card shadow-sm border-0">
-            <div class="card-header bg-success text-white fw-bold py-3">➕ Registrar Nuevo Docente</div>
-            <div class="card-body p-4 bg-white">
-                <form action="{{ url_for('crear_docente') }}" method="POST">
-                    <div class="row g-3">
-                        <div class="col-md-6"><label class="form-label small fw-bold">Nombre Completo</label><input type="text" name="nombre" class="form-control" required placeholder="Ej. Ing. Cristian"></div>
-                        <div class="col-md-6"><label class="form-label small fw-bold">ID Biométrico</label><input type="number" name="bio_id" class="form-control" required placeholder="101"></div>
-                        <div class="col-md-6"><label class="form-label small fw-bold">Usuario</label><input type="text" name="username" class="form-control" required></div>
-                        <div class="col-md-6"><label class="form-label small fw-bold">Contraseña</label><input type="password" name="password" class="form-control" required></div>
-                        <div class="col-12 mt-3">
-                            <div class="form-check form-switch p-3 border rounded-4 bg-light d-flex justify-content-between align-items-center">
-                                <label class="form-check-label fw-bold mb-0" for="sw_p">Habilitar apertura física por huella</label>
-                                <input class="form-check-input ms-0" type="checkbox" name="acceso_puerta" id="sw_p" style="transform: scale(1.3);">
-                            </div>
-                        </div>
-                    </div>
-                    <button class="btn btn-success w-100 mt-4 py-2 fw-bold rounded-pill shadow">GUARDAR DOCENTE</button>
-                </form>
-            </div>
-        </div>
-    </div>
-    <div class="collapse mb-4" id="collapsePermiso">
-        <div class="card shadow-sm border-0">
-            <div class="card-header bg-primary text-white fw-bold py-3"><i class="bi bi-calendar-plus me-2"></i> Registrar Permiso de Docente</div>
-            <div class="card-body p-4 bg-white">
-                <form action="{{ url_for('crear_permiso') }}" method="POST">
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                            <label class="form-label small fw-bold">Docente</label>
-                            <select name="docente_id" class="form-select" required>
-                                <option value="" disabled selected>Seleccione un docente</option>
-                                {% for d in docentes %}<option value="{{ d.id }}">{{ d.nombre }}</option>{% endfor %}
-                            </select>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label small fw-bold">Fecha del Permiso</label>
-                            <input type="date" name="fecha_permiso" class="form-control" required>
-                        </div>
-                        <div class="col-12">
-                            <label class="form-label small fw-bold">Observación (Opcional)</label>
-                            <textarea name="observacion" class="form-control" rows="2" placeholder="Ej. Cita médica, comisión, etc."></textarea>
-                        </div>
-                    </div>
-                    <button class="btn btn-primary w-100 mt-4 py-2 fw-bold rounded-pill shadow">GUARDAR PERMISO</button>
-                </form>
-            </div>
-        </div>
-    </div>
+    <!-- SECCIONES COLAPSABLES ELIMINADAS (Extraídas a vistas independientes) -->
 
-    <div class="collapse mb-4" id="collapseReportes">
-        <div class="card shadow-sm border-0">
-            <div class="card-header bg-dark text-white fw-bold py-3">📊 Generar Reportes (Excel)</div>
-            <div class="card-body p-4 bg-white">
-                <!-- Reporte de Asistencia -->
-                <h6 class="text-primary fw-bold">Reporte de Asistencia</h6>
-                <hr>
-                <form action="{{ url_for('descargar_reporte_matricial') }}" method="GET">
-                    <div class="row g-3">
-                        <div class="col-md-4"><label class="form-label small fw-bold">Fecha Inicio</label><input type="date" name="fecha_inicio" class="form-control"></div>
-                        <div class="col-md-4"><label class="form-label small fw-bold">Fecha Fin</label><input type="date" name="fecha_fin" class="form-control"></div>
-                        <div class="col-md-4"><label class="form-label small fw-bold">Docente</label>
-                            <select name="docente_id" class="form-select">
-                                <option value="todos">Todos</option>
-                                {% for d in docentes %}<option value="{{ d.biometric_id }}">{{ d.nombre }}</option>{% endfor %}
-                            </select>
-                        </div>
-                        <div class="col-12 mt-3">
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <label class="form-label small fw-bold">Jornada Mañana</label>
-                                    <div class="input-group">
-                                        <input type="time" name="hora_inicio_m" class="form-control" value="07:00">
-                                        <input type="time" name="hora_fin_m" class="form-control" value="13:00">
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label small fw-bold">Jornada Tarde</label>
-                                    <div class="input-group">
-                                        <input type="time" name="hora_inicio_t" class="form-control" value="13:01">
-                                        <input type="time" name="hora_fin_t" class="form-control" value="22:00">
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <button class="btn btn-primary w-100 mt-3 py-2 fw-bold rounded-pill shadow">DESCARGAR REPORTE MATRICIAL</button>
-                </form>
-
-                <!-- Reporte de Permisos -->
-                <h6 class="text-primary fw-bold mt-5">Reporte de Permisos</h6>
-                <hr>
-                <form action="{{ url_for('descargar_reporte_permisos') }}" method="GET">
-                    <div class="row g-3">
-                        <div class="col-md-4"><label class="form-label small fw-bold">Fecha Inicio</label><input type="date" name="fecha_inicio_permiso" class="form-control"></div>
-                        <div class="col-md-4"><label class="form-label small fw-bold">Fecha Fin</label><input type="date" name="fecha_fin_permiso" class="form-control"></div>
-                        <div class="col-md-4"><label class="form-label small fw-bold">Docente</label>
-                            <select name="docente_id_permiso" class="form-select">
-                                <option value="todos">Todos</option>
-                                {% for d in docentes %}<option value="{{ d.id }}">{{ d.nombre }}</option>{% endfor %}
-                            </select>
-                        </div>
-                    </div>
-                    <button class="btn btn-secondary w-100 mt-3 py-2 fw-bold rounded-pill shadow">DESCARGAR REPORTE DE PERMISOS</button>
-                </form>
-            </div>
-        </div>
-    </div>
-
-    <!-- SECCIÓN SINCRONIZAR HORA -->
-    <div class="collapse mb-4" id="collapseSync">
-        <div class="card shadow-sm border-0">
-            <div class="card-header bg-info text-white fw-bold py-3"><i class="bi bi-clock-fill me-2"></i> Sincronizar Hora del Biométrico</div>
-            <div class="card-body p-4 bg-white">
-                <form action="{{ url_for('admin_sincronizar_hora') }}" method="POST">
-                    <p class="small text-muted">Use esta herramienta para forzar la fecha y hora del dispositivo biométrico. Se recomienda usar la hora actual del servidor para mantener la consistencia.</p>
-                    <div class="row g-3 align-items-end">
-                        <div class="col-md-8">
-                            <label class="form-label small fw-bold">Fecha y Hora a Establecer</label>
-                            <input type="datetime-local" id="datetime-sync" name="new_time" class="form-control" required>
-                        </div>
-                        <div class="col-md-4">
-                            <button type="button" class="btn btn-outline-secondary w-100" onclick="setCurrentTime()">Usar Hora Actual</button>
-                        </div>
-                    </div>
-                    <button class="btn btn-info w-100 mt-4 py-2 fw-bold rounded-pill shadow text-white">ENVIAR COMANDO DE SINCRONIZACIÓN</button>
-                </form>
-            </div>
-        </div>
-    </div>
+    <!-- SECCIÓN SINCRONIZAR HORA ELIMINADA (Extraída a vista independiente) -->
 
     <!-- CONTENIDO PRINCIPAL -->
     <div class="row g-4">
