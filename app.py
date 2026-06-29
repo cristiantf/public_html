@@ -133,21 +133,23 @@ def api_recibir_log():
         try:
             # Reemplazar la T del estándar ISO 8601 por un espacio
             fecha_limpia = fecha_str.replace('T', ' ')
-            # Eliminar posibles compensaciones de zona horaria si vienen del biométrico
-            if '-' in fecha_limpia[10:]:
-                fecha_limpia = fecha_limpia.split('-')[0]
-            elif '+' in fecha_limpia[10:]:
-                fecha_limpia = fecha_limpia.split('+')[0]
-                
-            fecha_log = datetime.strptime(fecha_limpia[:19], "%Y-%m-%d %H:%M:%S")
-            # Localizar el datetime a la zona horaria de Ecuador
-            fecha_log = tz_ecu.localize(fecha_log)
+            # Tomar solo los primeros 19 caracteres: "YYYY-MM-DD HH:MM:SS"
+            # y descartar cualquier sufijo de zona horaria (+HH:MM o -HH:MM) que
+            # aparezca DESPUÉS de la posición 19. El error anterior dividía por
+            # el primer '-' encontrado, cortando el AÑO de la cadena.
+            fecha_base = fecha_limpia[:19]
+            fecha_log = datetime.strptime(fecha_base, "%Y-%m-%d %H:%M:%S")
+            # La hora que llega del NodeMCU ya está en hora Ecuador (sincronizada
+            # con el reloj Hikvision). No se convierte ni se modifica.
+            print(f"[recibir_log] Fecha recibida del hardware: {fecha_base} -> registrada tal cual")
         except Exception as e:
-            print(f"Error parseando fecha recibida: {e}")
+            print(f"[recibir_log] Error parseando fecha '{fecha_str}': {e} -> se usará hora del servidor")
             fecha_log = None
 
     if fecha_log is None:
-        fecha_log = datetime.now(tz_ecu)
+        tz_ecu = pytz.timezone('America/Guayaquil')
+        fecha_log = datetime.now(tz_ecu).replace(tzinfo=None)
+        print(f"[recibir_log] Sin fecha del hardware, usando hora del servidor: {fecha_log}")
 
     # Convertir a datetime ingenuo (naive) representando la hora local de Ecuador para guardarlo en MySQL
     fecha_log_naive = fecha_log.replace(tzinfo=None)
