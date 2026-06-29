@@ -107,15 +107,29 @@ Esta es la parte más crítica. Cuando el código nuevo requiere campos adiciona
 
 ### Paso 3: Reiniciar la Aplicación
 
-Para que todos los cambios surtan efecto (tanto el nuevo código como la nueva estructura de la base de datos), debe reiniciar el proceso de la aplicación Flask. La forma de hacerlo dependerá de cómo esté ejecutando la aplicación en producción (por ejemplo, `systemd`, `gunicorn`, `supervisor`, etc.).
+Para que todos los cambios surtan efecto (tanto el nuevo código como la nueva estructura de la base de datos), debe reiniciar el proceso de la aplicación Flask. En producción, la aplicación corre sobre **Gunicorn** administrado por **systemd** con el nombre `biometrico.service`.
 
--   Si usa `systemd`:
-    ```bash
-    sudo systemctl restart mi_aplicacion_flask.service
-    ```
--   Si la está ejecutando directamente, simplemente deténgala (`Ctrl+C`) y vuelva a iniciarla:
-    ```bash
-    flask run --host=0.0.0.0 --port=5000
-    ```
+```bash
+sudo systemctl restart biometrico.service
+```
+
+**Importante:** Cada vez que se modifique el archivo `app.py`, es obligatorio reiniciar el servicio. Los cambios en el código fuente no se reflejan automáticamente en el servidor hasta que Gunicorn recargue los módulos Python.
+
+Para verificar que el servicio está corriendo correctamente:
+```bash
+sudo systemctl status biometrico.service
+```
 
 Una vez reiniciada, la aplicación funcionará con las nuevas características y seguirá utilizando todos los datos históricos que ya tenía almacenados.
+
+---
+
+## Parte 3: Verificación del Hardware Biométrico
+
+Si las marcaciones de huella no se registran en la interfaz web, verificar el siguiente checklist en orden:
+
+1. **Cable de red del biométrico:** Asegurar que el cable Ethernet del Hikvision DS-K1T8003EF (IP fija `192.168.1.22`) esté firmemente conectado. Sin conexión de red, el biométrico no puede enviar eventos ISAPI al NodeMCU.
+2. **Conectividad de red:** Desde la red local, hacer ping a `192.168.1.22` para confirmar que el biométrico es accesible.
+3. **NodeMCU conectado a WiFi:** Verificar que el LED del NodeMCU indique conexión WiFi activa. Si no se conecta, el NodeMCU creará un portal cautivo llamado `NODE_PUERTA_ISTAE` para configuración.
+4. **Monitor Serie:** Conectar el NodeMCU por USB y abrir el Monitor Serie a 115200 baudios para ver los mensajes de diagnóstico del firmware.
+5. **Servicio Gunicorn:** Verificar que el servicio `biometrico.service` esté activo en el servidor.
