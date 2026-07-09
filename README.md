@@ -9,7 +9,7 @@ Este proyecto es un sistema de control de acceso biométrico basado en la web, d
 - **Módulos Administrativos Independientes:** La creación de docentes, el registro de permisos, reportes Excel y sincronización horaria operan en sus propias páginas para una experiencia más inmersiva y tradicional.
 - **Gestión Paginada de Datos:** La revisión de asistencias y permisos cuenta con Paginación inteligente en el servidor (mostrando bloques de 20-30 registros a la vez), lo cual protege al servidor de quedarse sin memoria cuando el sistema escala.
 - **Apertura remota de la puerta:** Vía asincrónica a través de la interfaz web.
-- **Registro diferenciado de eventos:** El sistema distingue entre accesos exitosos (`Asistencia + puerta`) y accesos denegados (`Acceso Denegado`) según el estado reportado por el hardware.
+- **Registro diferenciado de eventos:** El sistema distingue entre accesos con apertura de puerta (`Asistencia + puerta`) y marcaciones sin apertura (`Asistencia`) según el estado reportado por el hardware.
 - **Estética Corporativa:** Integración del logotipo e imagen institucional del ISTAE en todas las vistas (Login, Dashboard, Favicon).
 
 ## Pila Tecnológica
@@ -50,7 +50,7 @@ El firmware del NodeMCU se comunica con el biométrico Hikvision vía protocolo 
 ## Endpoints de la API Central (ESP8266)
 
 - `GET /api/sincronizar`: Devuelve IDs biométricos autorizados (lista blanca separada por comas).
-- `POST /api/recibir_log`: Recibe logs presenciales. Acepta JSON con campos `id`, `estado` (`EXITO`/`DENEGADO`), `fecha_dispositivo` (ISO 8601), `token` y `origen`.
+- `POST /api/recibir_log`: Recibe logs presenciales. Acepta JSON con campos `id`, `estado` (`EXITO`/`DENEGADO`), `fecha_dispositivo` (ISO 8601), `token` y `origen`. Ambos estados se registran como asistencia válida en los reportes.
 - `GET /api/check_comando`: Comprueba si hay comandos remotos pendientes (`ABRIR`, `SET_TIME|<iso_time>`, `NADA`).
 *(Cualquiera de los tres endpoints actualiza el estado "Online" del Hardware).*
 

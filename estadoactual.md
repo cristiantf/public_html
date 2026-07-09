@@ -17,7 +17,7 @@ El proyecto es una solución funcional e integral de extremo a extremo que invol
   - Vistas administrativas completamente modularizadas (`/admin/nuevo_docente`, `/admin/reportes`, `/admin/sincronizar_hora`, etc.) con métodos GET/POST limpios.
   - Generación de reportes dinámicos en Excel mediante `openpyxl`.
   - Panel de control (Dashboard) con cálculo de métricas reales (Total de marcaciones diarias) y visualización del estado de conexión del Hardware (Online/Offline) basado en su último ping al servidor.
-  - **Diferenciación de eventos:** El endpoint `/api/recibir_log` procesa el campo `estado` enviado por el hardware para registrar marcaciones exitosas (`Asistencia + puerta`) y accesos denegados (`Acceso Denegado`) por separado.
+  - **Diferenciación de eventos:** El endpoint `/api/recibir_log` procesa el campo `estado` enviado por el hardware para registrar marcaciones con apertura de puerta (`Asistencia + puerta`) y marcaciones sin apertura (`Asistencia`) por separado. Ambos tipos se incluyen en los reportes Excel.
   - **Parseo robusto de fecha:** El servidor toma únicamente los primeros 19 caracteres de la fecha ISO 8601 recibida del hardware, descartando sufijos de zona horaria de forma segura para evitar incompatibilidades con MySQL.
 
 ### 2.2 Hardware / Firmware IoT (C++ NodeMCU)
@@ -26,7 +26,7 @@ El proyecto es una solución funcional e integral de extremo a extremo que invol
   - Configuración automática de WiFi vía `WiFiManager` (portal cautivo `NODE_PUERTA_ISTAE`).
   - **Comunicación ISAPI con autenticación Digest QOP:** Conexión de streaming persistente al biométrico Hikvision para recibir eventos de huella en tiempo real.
   - Validación de usuarios mediante listas blancas descargadas del servidor, activando relé (apertura de puerta por 3 segundos).
-  - Envío de marcaciones al servidor con estado diferenciado (`EXITO`/`DENEGADO`).
+  - Envío de marcaciones al servidor con estado diferenciado (`EXITO`/`DENEGADO`). Ambos se registran como asistencia válida en la BD (`Asistencia + puerta` o `Asistencia`).
   - Sincronización de hora del biométrico bajo demanda vía comandos `SET_TIME` desde el panel admin, usando PUT con Digest Auth al ISAPI del Hikvision.
   - Polling constante con los endpoints (`/api/check_comando` cada 3s, `/api/sincronizar` cada 10 min) que permiten al servidor medir su conectividad en tiempo real (umbral de 60 segundos).
 
@@ -53,6 +53,7 @@ El proyecto es una solución funcional e integral de extremo a extremo que invol
 |---|---|---|---|
 | 2026-06-29 | Las marcaciones de huella no se registraban en la BD ni abrían la puerta | Cable de red del biométrico Hikvision (IP 192.168.1.22) desconectado. Sin conexión física, el biométrico no puede enviar eventos ISAPI al NodeMCU. | Reconexión del cable de red Ethernet al biométrico. |
 | 2026-06-29 | Bug en parseo de fecha que descartaba la hora | El código anterior dividía la fecha por el carácter `-`, lo cual cortaba el año de la cadena ISO 8601. | Corrección: tomar solo `fecha_str[:19]` en lugar de hacer `split('-')`. |
+| 2026-07-09 | Los reportes Excel no incluían marcaciones de docentes sin acceso a puerta | El tipo de evento `Acceso Denegado` no contenía la palabra "Asistencia" que los reportes usan como filtro. | Cambio de `Acceso Denegado` → `Asistencia` en el código y migración de 255 registros históricos en la BD. |
 
 ## 5. Áreas de Mejora y Deuda Técnica
 1. **Refactorización de `app.py` mediante Blueprints:** Aunque las rutas se desacoplaron lógicamente a vistas dedicadas en el HTML, todas las funciones siguen en el archivo maestro `app.py`. En el futuro, se recomienda estructurar mediante Flask Blueprints.

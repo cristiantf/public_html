@@ -13,7 +13,7 @@ El sistema sigue un modelo Cliente-Servidor (con clientes tanto Web como de Hard
 ## 2. Modelos de Base de Datos (ORM SQLAlchemy)
 
 1. **`User` (`usuarios`):** Atributos como `biometric_id`, `nombre`, `rol`, `acceso_puerta`, etc.
-2. **`Log` (`logs`):** Guarda la historia (asistencia y apertura). Posee campos para soporte remoto como `latitud`, `foto_path`, etc. El campo `tipo_evento` distingue entre `Asistencia + puerta` (acceso exitoso) y `Acceso Denegado` (huella no autorizada).
+2. **`Log` (`logs`):** Guarda la historia (asistencia y apertura). Posee campos para soporte remoto como `latitud`, `foto_path`, etc. El campo `tipo_evento` distingue entre `Asistencia + puerta` (acceso con apertura de puerta) y `Asistencia` (marcación sin apertura de puerta).
 3. **`Comando` (`comandos`):** Tabla de encolamiento de órdenes (Ej. `ABRIR` o `SET_TIME|2026-06-29T14:30:00`).
 4. **`Permiso` (`permisos`):** Registro de ausencias justificadas y permisos administrativos.
 
@@ -45,7 +45,7 @@ El sistema provee endpoints específicos, y cada vez que el NodeMCU los toca, el
   ```
 - **Campos:**
   - `id`: El `employeeNoString` del biométrico Hikvision (equivale a `biometric_id` en la BD).
-  - `estado`: `EXITO` cuando el usuario está en la lista blanca, `DENEGADO` cuando no lo está. Si es `EXITO`, se registra como `Asistencia + puerta`; si es `DENEGADO`, se registra como `Acceso Denegado`.
+  - `estado`: `EXITO` cuando el usuario está en la lista blanca (se abre la puerta), `DENEGADO` cuando no lo está (solo registra asistencia). Si es `EXITO`, se registra como `Asistencia + puerta`; si es `DENEGADO`, se registra como `Asistencia`. Ambos tipos son incluidos en los reportes Excel.
   - `fecha_dispositivo`: Fecha y hora del biométrico en formato ISO 8601. El servidor toma los primeros 19 caracteres (`YYYY-MM-DD HH:MM:SS`) descartando cualquier sufijo de zona horaria, ya que la hora del Hikvision ya está configurada en hora Ecuador.
   - `token`: Token de seguridad que debe coincidir con `config.TOKEN_NODE`.
 
@@ -71,7 +71,7 @@ El sistema provee endpoints específicos, y cada vez que el NodeMCU los toca, el
 1. El biométrico Hikvision DS-K1T8003EF detecta una huella y genera un evento ISAPI con el `employeeNoString` y `dateTime`.
 2. El NodeMCU, que mantiene una conexión abierta de streaming al endpoint `/ISAPI/Event/notification/alertStream` con autenticación Digest (incluyendo soporte QOP), recibe el JSON del evento.
 3. El firmware extrae el `employeeNoString` (ID del usuario) y `dateTime` (fecha/hora del biométrico).
-4. Si el ID está en la lista blanca local, activa el relé (abre la puerta por 3 segundos) y envía el log a la nube con estado `EXITO`. Si no está, envía con estado `DENEGADO`.
+4. Si el ID está en la lista blanca local, activa el relé (abre la puerta por 3 segundos) y envía el log a la nube con estado `EXITO` (se registra como `Asistencia + puerta`). Si no está en la lista blanca, envía con estado `DENEGADO` (se registra como `Asistencia`, sin apertura de puerta).
 5. El backend Flask recibe el POST, parsea la fecha (tomando los primeros 19 caracteres del ISO 8601), y lo guarda en MySQL como un `Log` naive (sin timezone).
 
 ### 4.4. Sincronización de Hora del Biométrico
