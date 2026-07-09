@@ -149,8 +149,10 @@ def api_recibir_log():
     fecha_log_naive = fecha_log.replace(tzinfo=None)
 
     # Procesar estado del hardware
+    # EXITO = usuario en lista blanca (se abrió la puerta)
+    # DENEGADO = usuario registrado pero sin acceso a puerta (solo asistencia)
     estado_hw = data.get('estado', 'EXITO')
-    tipo_ev = "Asistencia + puerta" if estado_hw == 'EXITO' else "Acceso Denegado"
+    tipo_ev = "Asistencia + puerta" if estado_hw == 'EXITO' else "Asistencia"
 
     nuevo_log = Log(
         fecha=fecha_log_naive,
