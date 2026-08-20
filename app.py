@@ -62,6 +62,16 @@ class Permiso(db.Model):
     observacion = db.Column(db.Text, nullable=True)
     docente = db.relationship('User', backref=db.backref('permisos', lazy=True))
 
+class ConfigSistema(db.Model):
+    """Configuración global del sistema (tabla singleton, una sola fila)."""
+    __tablename__ = 'config_sistema'
+    id = db.Column(db.Integer, primary_key=True)
+    asistencia_remota_activa = db.Column(db.Boolean, default=True)
+    ar_fecha_inicio = db.Column(db.Date, nullable=True)
+    ar_fecha_fin = db.Column(db.Date, nullable=True)
+    ar_hora_inicio = db.Column(db.Time, nullable=True)
+    ar_hora_fin = db.Column(db.Time, nullable=True)
+
 # --- INICIALIZACIÓN ---
 @login_manager.user_loader
 def load_user(user_id):
@@ -88,6 +98,28 @@ def init_db():
             db.session.commit()
 
 init_db()
+
+# --- HELPER: ASISTENCIA REMOTA ---
+def asistencia_remota_permitida():
+    """Verifica si la asistencia remota está habilitada según la config del admin."""
+    cfg = ConfigSistema.query.first()
+    if not cfg:
+        return True  # Sin config = permitido por defecto
+    if not cfg.asistencia_remota_activa:
+        return False
+    tz_ecu = pytz.timezone('America/Guayaquil')
+    ahora = datetime.now(tz_ecu)
+    # Verificar rango de fechas
+    if cfg.ar_fecha_inicio and ahora.date() < cfg.ar_fecha_inicio:
+        return False
+    if cfg.ar_fecha_fin and ahora.date() > cfg.ar_fecha_fin:
+        return False
+    # Verificar rango horario
+    if cfg.ar_hora_inicio and cfg.ar_hora_fin:
+        hora_actual = ahora.time()
+        if not (cfg.ar_hora_inicio <= hora_actual <= cfg.ar_hora_fin):
+            return False
+    return True
 
 # --- TRACK HARDWARE STATUS ---
 import time
@@ -201,7 +233,8 @@ def admin_dashboard():
 @login_required
 def docente_dashboard():
     logs = Log.query.filter_by(usuario_id=current_user.biometric_id).order_by(Log.id.desc()).limit(10).all()
-    return render_template('docente.html', logs=logs)
+    ar_habilitada = asistencia_remota_permitida()
+    return render_template('docente.html', logs=logs, ar_habilitada=ar_habilitada)
 
 @app.route('/perfil')
 @login_required
@@ -273,6 +306,31 @@ def reportes():
     docentes = User.query.filter_by(rol='docente').all()
     return render_template('reportes.html', docentes=docentes)
 
+@app.route('/admin/config_asistencia_remota', methods=['GET', 'POST'])
+@login_required
+def config_asistencia_remota():
+    if current_user.rol != 'admin':
+        return redirect(url_for('index'))
+    cfg = ConfigSistema.query.first()
+    if not cfg:
+        cfg = ConfigSistema()
+        db.session.add(cfg)
+        db.session.commit()
+    if request.method == 'POST':
+        cfg.asistencia_remota_activa = 'activa' in request.form
+        fi = request.form.get('fecha_inicio')
+        ff = request.form.get('fecha_fin')
+        cfg.ar_fecha_inicio = datetime.strptime(fi, '%Y-%m-%d').date() if fi else None
+        cfg.ar_fecha_fin = datetime.strptime(ff, '%Y-%m-%d').date() if ff else None
+        hi = request.form.get('hora_inicio')
+        hf = request.form.get('hora_fin')
+        cfg.ar_hora_inicio = datetime.strptime(hi, '%H:%M').time() if hi else None
+        cfg.ar_hora_fin = datetime.strptime(hf, '%H:%M').time() if hf else None
+        db.session.commit()
+        flash('Configuración de asistencia remota actualizada.', 'success')
+        return redirect(url_for('admin_dashboard'))
+    return render_template('config_asistencia_remota.html', cfg=cfg)
+
 @app.route('/docente/abrir_puerta')
 @login_required
 def docente_abrir():
@@ -291,6 +349,9 @@ def docente_abrir():
 @app.route('/docente/marcar_web', methods=['GET', 'POST'])
 @login_required
 def docente_marcar():
+    if not asistencia_remota_permitida():
+        flash('La asistencia remota no está habilitada en este momento.', 'warning')
+        return redirect(url_for('docente_dashboard'))
     if request.method == 'POST':
         lat = request.form.get('latitud')
         lon = request.form.get('longitud')

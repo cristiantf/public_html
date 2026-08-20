@@ -75,8 +75,15 @@
                 <div class="card-body text-center d-flex flex-column justify-content-center align-items-center p-4">
                     <i class="bi bi-calendar-check-fill text-primary display-4 mb-3"></i>
                     <h5 class="fw-bold">Marcar Asistencia Remota</h5>
+                    {% if ar_habilitada %}
                     <p class="text-muted small">Registra tu asistencia desde tu ubicación actual. Se requerirá acceso al GPS.</p>
                     <button class="btn btn-primary rounded-pill px-5 fw-bold mt-auto" data-bs-toggle="modal" data-bs-target="#modalMarcarAsistencia" onclick="initiateGPS()">Marcar Ahora</button>
+                    {% else %}
+                    <p class="text-muted small">La asistencia remota no está disponible en este momento.</p>
+                    <button class="btn btn-secondary rounded-pill px-5 fw-bold mt-auto" disabled>
+                        <i class="bi bi-lock-fill me-1"></i>No disponible
+                    </button>
+                    {% endif %}
                 </div>
             </div>
         </div>
