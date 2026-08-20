@@ -29,7 +29,7 @@
             <form action="{{ url_for('docente_marcar') }}" method="POST" enctype="multipart/form-data" id="formMarcarAsistencia">
                 <div class="modal-header bg-primary text-white border-0 py-3">
                     <h5 class="modal-title fw-bold"><i class="bi bi-geo-alt-fill me-2"></i>Registrar Asistencia Remota</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" onclick="stopFaceVideo()"></button>
                 </div>
                 <div class="modal-body p-4">
                     <div id="gps-status" class="alert alert-info d-flex align-items-center">
@@ -38,6 +38,22 @@
                     </div>
                     <input type="hidden" name="latitud" id="latitud">
                     <input type="hidden" name="longitud" id="longitud">
+                    
+                    {% if requiere_face_id %}
+                    <input type="hidden" name="live_face_descriptor" id="live_face_descriptor">
+                    <div class="text-center mb-3">
+                        <h6 class="fw-bold mb-2"><i class="bi bi-person-bounding-box text-primary me-2"></i>Verificación Facial Requerida</h6>
+                        <div id="verify-video-container" class="position-relative d-inline-block rounded-3 overflow-hidden" style="width: 100%; max-width: 250px; border: 2px solid #ccc;">
+                            <video id="verify-video-feed" width="250" height="200" autoplay muted playsinline style="object-fit: cover;"></video>
+                            <canvas id="verify-video-canvas" class="position-absolute top-0 start-0" style="z-index: 10;"></canvas>
+                            <div id="verify-face-loading" class="position-absolute top-0 start-0 w-100 h-100 d-flex flex-column justify-content-center align-items-center" style="background: rgba(0,0,0,0.7); z-index: 20;">
+                                <div class="spinner-border text-light mb-2" role="status"></div>
+                                <span class="text-light small fw-bold" id="verify-loading-text">Cargando IA...</span>
+                            </div>
+                        </div>
+                        <div id="verify-status" class="alert alert-warning mt-2 small p-2 mb-0">Escaneando rostro... mire a la cámara.</div>
+                    </div>
+                    {% endif %}
 
                     <div class="mb-3">
                         <label for="descripcion" class="form-label fw-bold small">Descripción (Opcional)</label>
@@ -50,7 +66,7 @@
                     </div>
                 </div>
                 <div class="modal-footer border-0 bg-light p-3">
-                    <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal" onclick="stopFaceVideo()">Cancelar</button>
                     <button type="submit" id="btnSubmitAsistencia" class="btn btn-primary rounded-pill px-5 fw-bold shadow" disabled>CONFIRMAR</button>
                 </div>
             </form>
@@ -76,8 +92,15 @@
                     <i class="bi bi-calendar-check-fill text-primary display-4 mb-3"></i>
                     <h5 class="fw-bold">Marcar Asistencia Remota</h5>
                     {% if ar_habilitada %}
-                    <p class="text-muted small">Registra tu asistencia desde tu ubicación actual. Se requerirá acceso al GPS.</p>
-                    <button class="btn btn-primary rounded-pill px-5 fw-bold mt-auto" data-bs-toggle="modal" data-bs-target="#modalMarcarAsistencia" onclick="initiateGPS()">Marcar Ahora</button>
+                        {% if requiere_face_id and not tiene_rostro %}
+                            <div class="alert alert-danger small p-2 w-100">
+                                <i class="bi bi-exclamation-triangle-fill me-1"></i>Para marcar asistencia debes registrar tu rostro primero.
+                            </div>
+                            <a href="{{ url_for('perfil') }}" class="btn btn-primary rounded-pill px-5 fw-bold mt-auto">Ir a Perfil</a>
+                        {% else %}
+                            <p class="text-muted small">Registra tu asistencia desde tu ubicación actual. Se requerirá acceso al GPS.</p>
+                            <button class="btn btn-primary rounded-pill px-5 fw-bold mt-auto" data-bs-toggle="modal" data-bs-target="#modalMarcarAsistencia" onclick="initiateGPS()">Marcar Ahora</button>
+                        {% endif %}
                     {% else %}
                     <p class="text-muted small">La asistencia remota no está disponible en este momento.</p>
                     <button class="btn btn-secondary rounded-pill px-5 fw-bold mt-auto" disabled>
@@ -136,19 +159,34 @@
     </div>
 </div>
 
+{% if requiere_face_id %}
+<script src="{{ url_for('static', filename='js/face-api.min.js') }}"></script>
+{% endif %}
+
 <script>
+let gpsOk = false;
+let faceOk = {% if requiere_face_id %}false{% else %}true{% endif %};
+let faceInterval = null;
+let verifyStream = null;
+
 function initiateGPS() {
+    gpsOk = false;
+    if('{{ requiere_face_id }}' === 'True') {
+        faceOk = false;
+    }
+    
+    checkEnableSubmit();
+    
+    // GPS
     const statusDiv = document.getElementById('gps-status');
     const latInput = document.getElementById('latitud');
     const lonInput = document.getElementById('longitud');
-    const submitBtn = document.getElementById('btnSubmitAsistencia');
 
     statusDiv.innerHTML = '<div class="spinner-border spinner-border-sm me-2"></div>Obteniendo ubicación GPS...';
     statusDiv.className = 'alert alert-info d-flex align-items-center';
-    submitBtn.disabled = true;
 
     if (!navigator.geolocation) {
-        statusDiv.innerHTML = 'Geolocalización no es soportada por este navegador.';
+        statusDiv.innerHTML = 'Geolocalización no soportada.';
         statusDiv.className = 'alert alert-danger';
         return;
     }
@@ -157,15 +195,97 @@ function initiateGPS() {
         (position) => {
             latInput.value = position.coords.latitude;
             lonInput.value = position.coords.longitude;
-            statusDiv.innerHTML = `<i class="bi bi-check-circle-fill me-2"></i>Ubicación obtenida con éxito.`;
-            statusDiv.className = 'alert alert-success d-flex align-items-center';
-            submitBtn.disabled = false;
+            statusDiv.innerHTML = `<i class="bi bi-check-circle-fill me-2"></i>GPS OK.`;
+            statusDiv.className = 'alert alert-success d-flex align-items-center p-2 mb-3';
+            gpsOk = true;
+            checkEnableSubmit();
         },
         () => {
-            statusDiv.innerHTML = 'No se pudo obtener la ubicación. Por favor, habilite los permisos de GPS.';
+            statusDiv.innerHTML = 'GPS Denegado.';
             statusDiv.className = 'alert alert-danger';
         }
     );
+
+    // Face ID
+    if('{{ requiere_face_id }}' === 'True') {
+        document.getElementById('verify-status').className = "alert alert-warning mt-2 small p-2 mb-0";
+        document.getElementById('verify-status').innerHTML = "Iniciando IA...";
+        startFaceVerification();
+    }
+}
+
+function checkEnableSubmit() {
+    const btn = document.getElementById('btnSubmitAsistencia');
+    if (gpsOk && faceOk) {
+        btn.disabled = false;
+    } else {
+        btn.disabled = true;
+    }
+}
+
+async function startFaceVerification() {
+    document.getElementById('verify-face-loading').classList.remove('d-none');
+    
+    try {
+        const MODEL_URL = '/static/models';
+        await Promise.all([
+            faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
+            faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+            faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
+        ]);
+        
+        const video = document.getElementById('verify-video-feed');
+        const canvas = document.getElementById('verify-video-canvas');
+        
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
+        .then(stream => {
+            verifyStream = stream;
+            video.srcObject = stream;
+            document.getElementById('verify-face-loading').classList.add('d-none');
+            
+            video.onplay = () => {
+                const displaySize = { width: video.width, height: video.height };
+                faceapi.matchDimensions(canvas, displaySize);
+                
+                faceInterval = setInterval(async () => {
+                    if(faceOk) return; // Si ya validó, no seguir buscando
+                    
+                    const detections = await faceapi.detectAllFaces(video).withFaceLandmarks().withFaceDescriptors();
+                    const ctx = canvas.getContext('2d');
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    
+                    if (detections.length === 1 && detections[0].detection.score > 0.85) {
+                        const resized = faceapi.resizeResults(detections, displaySize);
+                        faceapi.draw.drawDetections(canvas, resized);
+                        
+                        // Guardar descriptor y aprobar front-end (el backend verificará la identidad)
+                        document.getElementById('live_face_descriptor').value = JSON.stringify(Array.from(detections[0].descriptor));
+                        document.getElementById('verify-status').className = "alert alert-success mt-2 small p-2 mb-0 fw-bold";
+                        document.getElementById('verify-status').innerHTML = '<i class="bi bi-check-circle-fill me-1"></i>Rostro escaneado.';
+                        document.getElementById('verify-video-container').style.borderColor = '#198754';
+                        
+                        faceOk = true;
+                        checkEnableSubmit();
+                        stopFaceVideo(); // Apagar cámara
+                    }
+                }, 300);
+            };
+        })
+        .catch(err => {
+            document.getElementById('verify-status').className = "alert alert-danger mt-2 small p-2 mb-0";
+            document.getElementById('verify-status').innerHTML = 'Error de cámara.';
+            document.getElementById('verify-face-loading').classList.add('d-none');
+        });
+    } catch(e) {
+        console.error(e);
+    }
+}
+
+function stopFaceVideo() {
+    if(faceInterval) clearInterval(faceInterval);
+    if(verifyStream) {
+        verifyStream.getTracks().forEach(track => track.stop());
+    }
 }
 </script>
 {% endblock %}

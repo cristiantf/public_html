@@ -35,6 +35,7 @@ class User(UserMixin, db.Model):
     password = db.Column(db.String(255))
     rol = db.Column(db.String(20), default='docente')
     acceso_puerta = db.Column(db.Integer, default=0)
+    face_descriptor = db.Column(db.Text, nullable=True)
 
 class Log(db.Model):
     __tablename__ = 'logs'
@@ -67,6 +68,7 @@ class ConfigSistema(db.Model):
     __tablename__ = 'config_sistema'
     id = db.Column(db.Integer, primary_key=True)
     asistencia_remota_activa = db.Column(db.Boolean, default=True)
+    requiere_face_id = db.Column(db.Boolean, default=False)
     ar_fecha_inicio = db.Column(db.Date, nullable=True)
     ar_fecha_fin = db.Column(db.Date, nullable=True)
     ar_hora_inicio = db.Column(db.Time, nullable=True)
@@ -234,12 +236,25 @@ def admin_dashboard():
 def docente_dashboard():
     logs = Log.query.filter_by(usuario_id=current_user.biometric_id).order_by(Log.id.desc()).limit(10).all()
     ar_habilitada = asistencia_remota_permitida()
-    return render_template('docente.html', logs=logs, ar_habilitada=ar_habilitada)
+    cfg = ConfigSistema.query.first()
+    requiere_face_id = cfg.requiere_face_id if cfg else False
+    tiene_rostro = current_user.face_descriptor is not None
+    return render_template('docente.html', logs=logs, ar_habilitada=ar_habilitada, requiere_face_id=requiere_face_id, tiene_rostro=tiene_rostro)
 
 @app.route('/perfil')
 @login_required
 def perfil():
     return render_template('perfil.html')
+
+@app.route('/docente/registrar_rostro', methods=['POST'])
+@login_required
+def registrar_rostro():
+    descriptor = request.json.get('descriptor')
+    if descriptor:
+        current_user.face_descriptor = json.dumps(descriptor)
+        db.session.commit()
+        return jsonify({"status": "success"})
+    return jsonify({"status": "error"}), 400
 
 # --- RUTA PARA SERVIR EVIDENCIAS ---
 @app.route('/uploads/<filename>')
@@ -318,6 +333,7 @@ def config_asistencia_remota():
         db.session.commit()
     if request.method == 'POST':
         cfg.asistencia_remota_activa = 'activa' in request.form
+        cfg.requiere_face_id = 'requiere_face_id' in request.form
         fi = request.form.get('fecha_inicio')
         ff = request.form.get('fecha_fin')
         cfg.ar_fecha_inicio = datetime.strptime(fi, '%Y-%m-%d').date() if fi else None
@@ -352,7 +368,31 @@ def docente_marcar():
     if not asistencia_remota_permitida():
         flash('La asistencia remota no está habilitada en este momento.', 'warning')
         return redirect(url_for('docente_dashboard'))
+    
+    cfg = ConfigSistema.query.first()
+    
     if request.method == 'POST':
+        if cfg and cfg.requiere_face_id:
+            live_face_str = request.form.get('live_face_descriptor')
+            if not live_face_str or not current_user.face_descriptor:
+                flash('Validación facial requerida y no superada.', 'danger')
+                return redirect(url_for('docente_dashboard'))
+            try:
+                import math
+                live_desc = json.loads(live_face_str)
+                saved_desc = json.loads(current_user.face_descriptor)
+                
+                # Distancia Euclidiana
+                distance = math.sqrt(sum((a - b) ** 2 for a, b in zip(live_desc, saved_desc)))
+                
+                # Umbral estricto para face-api.js (0.50 o 0.55)
+                if distance > 0.55:
+                    flash(f'Verificación facial fallida por suplantación (Score: {distance:.2f}).', 'danger')
+                    return redirect(url_for('docente_dashboard'))
+            except Exception as e:
+                flash(f'Error procesando biometría: {str(e)}', 'danger')
+                return redirect(url_for('docente_dashboard'))
+                
         lat = request.form.get('latitud')
         lon = request.form.get('longitud')
         descripcion = request.form.get('descripcion')
