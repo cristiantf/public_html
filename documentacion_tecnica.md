@@ -16,6 +16,7 @@ El sistema sigue un modelo Cliente-Servidor (con clientes tanto Web como de Hard
 2. **`Log` (`logs`):** Guarda la historia (asistencia y apertura). Posee campos para soporte remoto como `latitud`, `foto_path`, etc. El campo `tipo_evento` distingue entre `Asistencia + puerta` (acceso con apertura de puerta) y `Asistencia` (marcación sin apertura de puerta).
 3. **`Comando` (`comandos`):** Tabla de encolamiento de órdenes (Ej. `ABRIR` o `SET_TIME|2026-06-29T14:30:00`).
 4. **`Permiso` (`permisos`):** Registro de ausencias justificadas y permisos administrativos.
+5. **`ConfigSistema` (`config_sistema`):** Tabla Singleton (1 sola fila) para variables de entorno lógicas, como habilitar o deshabilitar (o programar) la asistencia remota desde la web.
 
 ---
 

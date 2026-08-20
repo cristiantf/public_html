@@ -10,6 +10,7 @@ Este proyecto es un sistema de control de acceso biométrico basado en la web, d
 - **Gestión Paginada de Datos:** La revisión de asistencias y permisos cuenta con Paginación inteligente en el servidor (mostrando bloques de 20-30 registros a la vez), lo cual protege al servidor de quedarse sin memoria cuando el sistema escala.
 - **Apertura remota de la puerta:** Vía asincrónica a través de la interfaz web.
 - **Registro diferenciado de eventos:** El sistema distingue entre accesos con apertura de puerta (`Asistencia + puerta`) y marcaciones sin apertura (`Asistencia`) según el estado reportado por el hardware.
+- **Asistencia Remota Configurable:** El administrador puede activar, desactivar o programar (por fechas y horas) la disponibilidad del registro de asistencia vía web (GPS) desde el panel de control.
 - **Estética Corporativa:** Integración del logotipo e imagen institucional del ISTAE en todas las vistas (Login, Dashboard, Favicon).
 
 ## Pila Tecnológica
@@ -60,6 +61,7 @@ El firmware del NodeMCU se comunica con el biométrico Hikvision vía protocolo 
 - **Log:** Historial de accesos, asistencias y eventos remotos.
 - **Comando:** Puente asincrónico para enviar órdenes (abrir puerta, sincronizar hora) desde la Web hacia el hardware.
 - **Permiso:** Manejo de excepciones, ausencias y permisos administrativos.
+- **ConfigSistema:** Almacena la configuración global y reglas de negocio dinámicas (ej: habilitación de asistencia remota).
 
 ## Troubleshooting
 

@@ -14,7 +14,8 @@ El proyecto es una solución funcional e integral de extremo a extremo que invol
   - Gestión de sesiones y roles de usuario (`admin`, `docente`).
   - Creación, edición y eliminación de docentes a través de vistas dedicadas.
   - Gestión de logs de asistencias y permisos **con paginación del lado del servidor** (ej: últimas 30 asistencias por página) para prevenir el agotamiento de memoria del servidor al escalar la base de datos.
-  - Vistas administrativas completamente modularizadas (`/admin/nuevo_docente`, `/admin/reportes`, `/admin/sincronizar_hora`, etc.) con métodos GET/POST limpios.
+  - Vistas administrativas completamente modularizadas (`/admin/nuevo_docente`, `/admin/reportes`, `/admin/sincronizar_hora`, `/admin/config_asistencia_remota`, etc.) con métodos GET/POST limpios.
+  - **Asistencia Remota Configurable:** Control granular con panel dedicado para que el administrador decida (incluso con rangos de fechas y horas) cuándo los docentes pueden marcar su asistencia web.
   - Generación de reportes dinámicos en Excel mediante `openpyxl`.
   - Panel de control (Dashboard) con cálculo de métricas reales (Total de marcaciones diarias) y visualización del estado de conexión del Hardware (Online/Offline) basado en su último ping al servidor.
   - **Diferenciación de eventos:** El endpoint `/api/recibir_log` procesa el campo `estado` enviado por el hardware para registrar marcaciones con apertura de puerta (`Asistencia + puerta`) y marcaciones sin apertura (`Asistencia`) por separado. Ambos tipos se incluyen en los reportes Excel.
