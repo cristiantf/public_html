@@ -102,10 +102,10 @@
                     </button>
 
                     <!-- Contenedor del video oculto inicialmente -->
-                    <div id="video-container" class="mt-4 d-none position-relative" style="width: 100%; max-width: 320px; margin: 0 auto; overflow: hidden; border-radius: 15px; border: 3px solid #0d6efd;">
-                        <video id="video-feed" width="320" height="240" autoplay muted playsinline style="object-fit: cover;"></video>
+                    <div id="video-container" class="mt-4 d-none position-relative mx-auto" style="width: 320px; height: 240px; overflow: hidden; border-radius: 15px; border: 3px solid #0d6efd; background-color: #000;">
+                        <video id="video-feed" autoplay muted playsinline style="width: 320px; height: 240px; object-fit: contain; display: block;"></video>
                         <!-- Canvas overlay para dibujar las facciones -->
-                        <canvas id="video-canvas" class="position-absolute top-0 start-0" style="z-index: 10;"></canvas>
+                        <canvas id="video-canvas" class="position-absolute top-0 start-0" style="z-index: 10; width: 320px; height: 240px;"></canvas>
                         <div id="face-loading" class="position-absolute top-0 start-0 w-100 h-100 d-flex flex-column justify-content-center align-items-center" style="background: rgba(0,0,0,0.7); z-index: 20;">
                             <div class="spinner-border text-light mb-2" role="status"></div>
                             <span class="text-light small fw-bold" id="face-loading-text">Cargando IA...</span>
@@ -113,7 +113,7 @@
                     </div>
                     
                     <div id="face-instructions" class="alert alert-info mt-3 d-none small">
-                        Mire directamente a la cámara. Manténgase quieto cuando el recuadro se ponga verde.
+                        Asegúrate de estar en un lugar iluminado. Mantente quieto cuando el recuadro se ponga verde.
                     </div>
                 </div>
             </div>
@@ -176,6 +176,8 @@
     let faceDetectionInterval = null;
 
     async function initFaceRegistration() {
+        alert("Para una mejor captura:\n\n1. Colócate en un lugar bien iluminado sin luz de fondo.\n2. Mira directamente a la cámara.\n3. Mantén tu rostro centrado y visible.");
+        
         // Mostrar UI
         document.getElementById('video-container').classList.remove('d-none');
         document.getElementById('face-instructions').classList.remove('d-none');
@@ -233,8 +235,8 @@
                             const resizedDetections = faceapi.resizeResults(detections, displaySize);
                             faceapi.draw.drawDetections(canvas, resizedDetections);
                             
-                            // Si detecta exactamente un rostro bien definido
-                            if (detections[0].detection.score > 0.85) {
+                            // Si detecta exactamente un rostro bien definido (confianza ajustada)
+                            if (detections[0].detection.score > 0.70) {
                                 document.getElementById('video-container').style.borderColor = '#198754'; // Verde
                                 clearInterval(faceDetectionInterval);
                                 saveFaceDescriptor(detections[0].descriptor);

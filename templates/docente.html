@@ -43,9 +43,9 @@
                     <input type="hidden" name="live_face_descriptor" id="live_face_descriptor">
                     <div class="text-center mb-3">
                         <h6 class="fw-bold mb-2"><i class="bi bi-person-bounding-box text-primary me-2"></i>Verificación Facial Requerida</h6>
-                        <div id="verify-video-container" class="position-relative d-inline-block rounded-3 overflow-hidden" style="width: 100%; max-width: 250px; border: 2px solid #ccc;">
-                            <video id="verify-video-feed" width="250" height="200" autoplay muted playsinline style="object-fit: cover;"></video>
-                            <canvas id="verify-video-canvas" class="position-absolute top-0 start-0" style="z-index: 10;"></canvas>
+                        <div id="verify-video-container" class="position-relative mx-auto rounded-3 overflow-hidden" style="width: 250px; height: 200px; border: 2px solid #ccc; background-color: #000;">
+                            <video id="verify-video-feed" autoplay muted playsinline style="width: 250px; height: 200px; object-fit: contain; display: block;"></video>
+                            <canvas id="verify-video-canvas" class="position-absolute top-0 start-0" style="z-index: 10; width: 250px; height: 200px;"></canvas>
                             <div id="verify-face-loading" class="position-absolute top-0 start-0 w-100 h-100 d-flex flex-column justify-content-center align-items-center" style="background: rgba(0,0,0,0.7); z-index: 20;">
                                 <div class="spinner-border text-light mb-2" role="status"></div>
                                 <span class="text-light small fw-bold" id="verify-loading-text">Cargando IA...</span>
@@ -254,7 +254,7 @@ async function startFaceVerification() {
                     const ctx = canvas.getContext('2d');
                     ctx.clearRect(0, 0, canvas.width, canvas.height);
                     
-                    if (detections.length === 1 && detections[0].detection.score > 0.85) {
+                    if (detections.length === 1 && detections[0].detection.score > 0.70) {
                         const resized = faceapi.resizeResults(detections, displaySize);
                         faceapi.draw.drawDetections(canvas, resized);
                         
