@@ -112,8 +112,14 @@
                         </div>
                     </div>
                     
-                    <div id="face-instructions" class="alert alert-info mt-3 d-none small">
-                        Asegúrate de estar en un lugar iluminado. Mantente quieto cuando el recuadro se ponga verde.
+                    <div id="progress-container" class="mt-3 d-none px-4">
+                        <div class="progress" style="height: 20px; border-radius: 10px;">
+                            <div id="face-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated bg-success" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+                        </div>
+                    </div>
+                    
+                    <div id="face-instructions" class="alert alert-info mt-3 d-none small fw-bold">
+                        <i class="bi bi-info-circle me-1"></i> <span id="face-instructions-text">Asegúrate de estar bien iluminado y mira a la cámara.</span>
                     </div>
                 </div>
             </div>
@@ -174,12 +180,20 @@
     let canvas = document.getElementById('video-canvas');
     let localStream = null;
     let faceDetectionInterval = null;
+    let captureProgress = 0;
+    let descriptorsList = [];
 
     async function initFaceRegistration() {
-        alert("Para una mejor captura:\n\n1. Colócate en un lugar bien iluminado sin luz de fondo.\n2. Mira directamente a la cámara.\n3. Mantén tu rostro centrado y visible.");
+        // Reiniciar variables
+        captureProgress = 0;
+        descriptorsList = [];
+        document.getElementById('face-progress-bar').style.width = '0%';
+        document.getElementById('face-progress-bar').innerText = '0%';
+        document.getElementById('face-instructions-text').innerText = 'Asegúrate de estar bien iluminado y mira a la cámara.';
         
         // Mostrar UI
         document.getElementById('video-container').classList.remove('d-none');
+        document.getElementById('progress-container').classList.remove('d-none');
         document.getElementById('face-instructions').classList.remove('d-none');
         document.getElementById('btnInitFaceReg').disabled = true;
         
@@ -238,11 +252,45 @@
                             // Si detecta exactamente un rostro bien definido (confianza ajustada)
                             if (detections[0].detection.score > 0.70) {
                                 document.getElementById('video-container').style.borderColor = '#198754'; // Verde
-                                clearInterval(faceDetectionInterval);
-                                saveFaceDescriptor(detections[0].descriptor);
+                                
+                                captureProgress += 5; // Requiere 20 frames exitosos (~4 segundos)
+                                if (captureProgress > 100) captureProgress = 100;
+                                
+                                document.getElementById('face-progress-bar').style.width = captureProgress + '%';
+                                document.getElementById('face-progress-bar').innerText = captureProgress + '%';
+                                
+                                descriptorsList.push(detections[0].descriptor);
+                                
+                                if (captureProgress === 40) {
+                                    document.getElementById('face-instructions-text').innerText = "Parpadea o mueve ligeramente la cabeza...";
+                                } else if (captureProgress === 80) {
+                                    document.getElementById('face-instructions-text').innerText = "¡Casi listo! Mantente ahí...";
+                                }
+                                
+                                if (captureProgress === 100) {
+                                    clearInterval(faceDetectionInterval);
+                                    
+                                    // Promediar los descriptores capturados para una representación mucho más robusta
+                                    const averagedDescriptor = new Float32Array(128);
+                                    for(let i=0; i<128; i++) {
+                                        let sum = 0;
+                                        for(let j=0; j<descriptorsList.length; j++) {
+                                            sum += descriptorsList[j][i];
+                                        }
+                                        averagedDescriptor[i] = sum / descriptorsList.length;
+                                    }
+                                    
+                                    document.getElementById('face-instructions-text').innerText = "¡Captura completada con éxito!";
+                                    document.getElementById('face-instructions').className = "alert alert-success mt-3 small fw-bold";
+                                    saveFaceDescriptor(averagedDescriptor);
+                                }
+                            } else {
+                                document.getElementById('video-container').style.borderColor = '#ffc107'; // Amarillo si la confianza es baja
+                                document.getElementById('face-instructions-text').innerText = "Rostro poco claro. Mejora la luz o céntrate.";
                             }
                         } else {
                             document.getElementById('video-container').style.borderColor = '#dc3545'; // Rojo (0 o más de 1 cara)
+                            document.getElementById('face-instructions-text').innerText = "Asegúrate de que solo se vea tu rostro.";
                         }
                     }, 200);
                 });
@@ -254,9 +302,6 @@
     }
 
     async function saveFaceDescriptor(descriptor) {
-        document.getElementById('face-instructions').className = "alert alert-success mt-3 small fw-bold";
-        document.getElementById('face-instructions').innerHTML = '<i class="bi bi-check-circle-fill me-1"></i> Rostro capturado. Guardando...';
-        
         // Detener cámara
         if (localStream) {
             localStream.getTracks().forEach(track => track.stop());
