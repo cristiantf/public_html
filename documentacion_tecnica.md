@@ -10,6 +10,7 @@ Hikvision DS-K1T8003EF ──ISAPI/Digest──▶ NodeMCU ESP8266 ──HTTPS�
 ```
 
 - **Frontend web:** Jinja2 (renderizado en servidor) + Bootstrap 5 + JavaScript. El dashboard se actualiza por AJAX y la asistencia remota usa face-api.js en el navegador.
+  - **Navegación:** un único menú lateral (`templates/includes/sidebar.html`) que `base.html` incluye según el rol, con la opción activa resaltada. En escritorio el botón ☰ lo contrae a íconos (estado guardado en `localStorage`); en celular y tablet (< 992 px) es un panel deslizable que se cierra con la X, tocando fuera, deslizando, con Esc o al elegir una opción. El título de cada página sale de `{% block title %}` o del diccionario `titulos` de `base.html`. La confirmación de apertura forzada está en `templates/includes/modal_apertura.html`.
 - **Backend:** aplicación Flask monolítica (`app.py`). Corre en **Gunicorn** (3 workers) administrado por **systemd** (`biometrico.service`), detrás de **Nginx** con SSL.
 - **Persistencia:** MySQL con SQLAlchemy. Las vistas pesadas usan `.paginate()` (20–30 registros por página).
 - **Configuración:** `config.py` lee los secretos de `instance/.env` o de variables de entorno (ver §6).

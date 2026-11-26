@@ -1,0 +1,68 @@
+{# Menú lateral único para todo el sistema. Se elige según el rol del usuario. #}
+{% set ep = request.endpoint %}
+{% macro item(endpoint, icon, label, also=[]) -%}
+    {%- set activo = ep == endpoint or ep in also -%}
+    <a href="{{ url_for(endpoint) }}" class="nav-link{% if activo %} active{% endif %}"{% if activo %} aria-current="page"{% endif %} title="{{ label }}" data-bs-placement="right">
+        <i class="bi {{ icon }}"></i><span class="nav-text">{{ label }}</span>
+    </a>
+{%- endmacro %}
+
+<div class="sidebar-inner">
+    <!-- Encabezado -->
+    <div class="sidebar-header">
+        <a href="{{ url_for('index') }}" class="sidebar-brand text-decoration-none">
+            <span class="brand-logo"><img src="{{ url_for('static', filename='img/logo.webp') }}" alt="Logo ISTAE"></span>
+            <span class="nav-text">
+                <span class="d-block fw-bold text-white lh-1">ISTAE</span>
+                <small class="text-white-50">Control de Acceso</small>
+            </span>
+        </a>
+        <button type="button" class="btn btn-link text-white-50 sidebar-close d-lg-none" id="sidebar-close" aria-label="Cerrar menú">
+            <i class="bi bi-x-lg fs-5"></i>
+        </button>
+    </div>
+
+    <!-- Usuario -->
+    <div class="sidebar-user">
+        <span class="user-avatar">{{ (current_user.nombre or 'U')[:1] | upper }}</span>
+        <span class="nav-text overflow-hidden">
+            <span class="d-block text-white fw-semibold text-truncate">{{ current_user.nombre }}</span>
+            <small class="text-white-50">{{ 'Administrador' if current_user.rol == 'admin' else 'Docente' }}</small>
+        </span>
+    </div>
+
+    <!-- Navegación -->
+    <nav class="sidebar-nav" aria-label="Menú principal">
+        {% if current_user.rol == 'admin' %}
+            <div class="section-label"><span class="nav-text">General</span></div>
+            {{ item('admin_dashboard', 'bi-grid-fill', 'Dashboard') }}
+            {{ item('gestion_asistencia', 'bi-calendar-range-fill', 'Asistencias', ['editar_asistencia']) }}
+            {{ item('gestion_permisos', 'bi-calendar-check-fill', 'Permisos', ['editar_permiso']) }}
+            {{ item('reportes', 'bi-file-earmark-spreadsheet-fill', 'Reportes Excel') }}
+
+            <div class="section-label"><span class="nav-text">Registro</span></div>
+            {{ item('nuevo_docente', 'bi-person-plus-fill', 'Nuevo Docente', ['editar_docente']) }}
+            {{ item('nuevo_permiso', 'bi-calendar-plus-fill', 'Registrar Permiso') }}
+
+            <div class="section-label"><span class="nav-text">Control de Acceso</span></div>
+            {{ item('config_asistencia_remota', 'bi-toggles', 'Asistencia Remota') }}
+            {{ item('admin_sincronizar_hora', 'bi-clock-history', 'Sincronizar Hora') }}
+            <a href="#" class="nav-link nav-link-danger" data-bs-toggle="modal" data-bs-target="#modalApertura" title="Apertura Forzada">
+                <i class="bi bi-unlock-fill"></i><span class="nav-text">Apertura Forzada</span>
+            </a>
+        {% else %}
+            <div class="section-label"><span class="nav-text">Mi Espacio</span></div>
+            {{ item('docente_dashboard', 'bi-grid-fill', 'Inicio') }}
+        {% endif %}
+
+        <div class="section-label"><span class="nav-text">Cuenta</span></div>
+        {{ item('perfil', 'bi-person-badge-fill', 'Mi Perfil y Face ID') }}
+    </nav>
+
+    <!-- Salida -->
+    <div class="sidebar-footer">
+        <a href="{{ url_for('logout') }}" class="nav-link nav-link-logout" title="Cerrar Sesión">
+            <i class="bi bi-box-arrow-right"></i><span class="nav-text">Cerrar Sesión</span>
+        </a>
+    </div>
+</div>

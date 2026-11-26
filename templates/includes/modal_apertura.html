@@ -1,0 +1,27 @@
+{% if current_user.rol == 'admin' %}
+<!-- Confirmación de apertura forzada (disponible desde cualquier página del admin) -->
+<div class="modal fade" id="modalApertura" tabindex="-1" aria-labelledby="tituloApertura" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content rounded-4 border-0 shadow-lg">
+            <div class="modal-header bg-danger text-white border-0 py-3">
+                <h5 class="modal-title fw-bold" id="tituloApertura"><i class="bi bi-shield-lock me-2"></i>Seguridad del Sistema</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body text-center p-4 p-sm-5 text-dark">
+                <div class="bg-danger bg-opacity-10 d-inline-block p-4 rounded-circle mb-4">
+                    <i class="bi bi-exclamation-triangle-fill text-danger fs-1"></i>
+                </div>
+                <h4 class="fw-bold">¿Abrir puerta físicamente?</h4>
+                <p class="text-muted mb-0">Esta acción activará el relé en el NodeMCU. Quedará un registro de auditoría bajo su nombre de administrador.</p>
+            </div>
+            <div class="modal-footer border-0 bg-light p-3 d-flex gap-2">
+                <button type="button" class="btn btn-light rounded-pill px-4 flex-fill flex-sm-grow-0" data-bs-dismiss="modal">Cancelar</button>
+                <form action="{{ url_for('admin_abrir') }}" method="POST" class="d-flex flex-fill flex-sm-grow-0">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-danger rounded-pill px-5 fw-bold shadow w-100">CONFIRMAR ACCIÓN</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
