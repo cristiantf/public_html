@@ -1,140 +1,205 @@
 # Guía de Implementación y Mantenimiento
 
-Este documento proporciona todos los pasos necesarios para desplegar el Sistema de Control de Acceso desde cero y para actualizar una implementación ya existente con nuevas versiones del software y cambios en la base de datos.
+Pasos para desplegar el Sistema de Control de Acceso desde cero, actualizar una instalación existente y verificar el hardware.
 
 ---
 
-## Parte 1: Implementación Inicial (Desde Cero)
+## Parte 1: Implementación inicial (desde cero)
 
-Siga estos pasos si está instalando el sistema por primera vez en un servidor.
+### Paso 1: Entorno del servidor
 
-### Paso 1: Configuración del Entorno del Servidor
+1. Acceda al servidor por SSH.
+2. Clone el repositorio:
+   ```bash
+   git clone <URL_DEL_REPOSITORIO>
+   cd <NOMBRE_DEL_DIRECTORIO>
+   ```
+3. Cree el entorno virtual. Use el nombre `venv`, que es el que espera el servicio systemd:
+   ```bash
+   python3 -m venv venv
+   source venv/bin/activate
+   pip install -r requirements.txt
+   ```
 
-1.  **Acceda al servidor** donde se alojará la aplicación (por ejemplo, mediante SSH).
-2.  **Clone el código fuente** desde el repositorio de Git.
-    ```bash
-    git clone <URL_DEL_REPOSITORIO>
-    cd <NOMBRE_DEL_DIRECTORIO>
-    ```
-3.  **Cree y active un entorno virtual** para Python. Esto aísla las dependencias del proyecto.
-    ```bash
-    python3 -m venv .venv
-    source .venv/bin/activate
-    ```
-4.  **Instale las librerías** necesarias que se especifican en el archivo `requirements.txt`.
-    ```bash
-    pip install -r requirements.txt
-    ```
+### Paso 2: Base de datos MySQL
 
-### Paso 2: Configuración de la Base de Datos MySQL en cPanel
+En el panel del servidor (HestiaCP o cPanel):
 
-1.  **Inicie sesión en su cPanel**.
-2.  Vaya a **Bases de datos > Bases de datos MySQL®**.
-3.  **Cree una nueva base de datos**: Asígnele un nombre, por ejemplo, `istae_asistencia`.
-4.  **Cree un nuevo usuario de base de datos**: Genere un nombre de usuario y una contraseña segura.
-5.  **Añada el usuario a la base de datos**: En la sección "Añadir usuario a la base de datos", seleccione el usuario y la base de datos que acaba de crear y haga clic en "Añadir".
-6.  **Asigne todos los privilegios** al usuario y guarde los cambios.
+1. Cree una base de datos (por ejemplo `user1_biom`).
+2. Cree un usuario con contraseña segura y dele todos los privilegios sobre esa base.
+3. Si MySQL está en otro servidor, autorice la IP del servidor de la aplicación como host remoto y use esa dirección en `DB_HOST`.
 
-### Paso 3: Permitir Conexión Remota (Whitelist IP)
+### Paso 3: Generar secretos
 
-1.  En cPanel, vaya a **Bases de datos > MySQL® Remoto**.
-2.  En el campo "Host", añada la dirección IP del servidor donde se está ejecutando la aplicación Flask:
-    ```
-    34.31.209.167
-    ```
-3.  Haga clic en "Añadir Host". Esto es crucial para permitir que la aplicación se conecte a la base de datos de cPanel.
+Genere valores aleatorios para `SECRET_KEY` y `TOKEN_NODE`:
 
-### Paso 4: Configuración de la Aplicación Flask
+```bash
+python3 -c "import secrets; print(secrets.token_urlsafe(48))"   # SECRET_KEY
+python3 -c "import secrets; print(secrets.token_urlsafe(24))"   # TOKEN_NODE
+```
 
-1.  `config.py` no contiene secretos: los lee del archivo **`instance/.env`**. Créelo con este contenido:
-    ```ini
-    SECRET_KEY=<cadena aleatoria larga>
-    DB_USER=<usuario MySQL>
-    DB_PASS=<contraseña MySQL>
-    DB_HOST=localhost
-    DB_NAME=<base de datos>
-    TOKEN_NODE=<token aleatorio, el mismo que en nodered5.ino>
-    EXIGIR_TOKEN_HARDWARE=true
-    ADMIN_INITIAL_PASSWORD=<contraseña del primer admin>
-    ```
-    Proteja el archivo con `chmod 600 instance/.env`. La carpeta `instance/` está en `.gitignore`: **nunca** suba este archivo a git. Las mismas claves pueden definirse como variables de entorno (tienen prioridad sobre el archivo).
-2.  Antes de flashear `nodered5.ino`, reemplace `CAMBIAR_TOKEN_NODE` por el valor de `TOKEN_NODE` y `CAMBIAR_PASS_HIKVISION` por la contraseña del biométrico. No suba el firmware con esos valores a git.
+### Paso 4: Configuración de la aplicación (`instance/.env`)
 
-### Paso 5: Inicialización y Ejecución
+`config.py` no contiene secretos: los lee de **`instance/.env`**. Créelo con este contenido:
 
-1.  **Ejecute la aplicación Flask por primera vez**. SQLAlchemy detectará que las tablas no existen y las creará automáticamente.
-    ```bash
-    flask run --host=0.0.0.0 --port=5000
-    ```
-2.  **Verifique la creación**: Acceda a la aplicación en su navegador (`http://<IP_DEL_SERVIDOR>:5000`). Inicie sesión como `admin` con la contraseña definida en `ADMIN_INITIAL_PASSWORD` (en `instance/.env`); si no se definió, la contraseña generada se imprime en el log del primer arranque. Si no hay errores, la instalación fue exitosa.
+```ini
+SECRET_KEY=<cadena aleatoria larga>
+DB_USER=<usuario MySQL>
+DB_PASS=<contraseña MySQL>
+DB_HOST=localhost
+DB_NAME=<base de datos>
+TOKEN_NODE=<token aleatorio, el mismo que en nodered5.ino>
+EXIGIR_TOKEN_HARDWARE=true
+ADMIN_INITIAL_PASSWORD=<contraseña del primer admin>
+HIKVISION_USER=admin
+HIKVISION_PASS=<contraseña del biométrico>
+```
+
+```bash
+chmod 600 instance/.env
+```
+
+- La carpeta `instance/` está en `.gitignore`: **nunca** suba este archivo a git.
+- Las mismas claves pueden definirse como variables de entorno; tienen prioridad sobre el archivo.
+- Si falta una variable obligatoria, la aplicación no arranca y el error indica cuál.
+- La descripción de cada variable está en [documentacion_tecnica.md §6](documentacion_tecnica.md#6-configuración-instanceenv).
+
+### Paso 5: Primer arranque
+
+1. Ejecute la aplicación. SQLAlchemy crea las tablas y el usuario `admin`:
+   ```bash
+   flask run --host=0.0.0.0 --port=5000
+   ```
+2. Inicie sesión como `admin` con la contraseña de `ADMIN_INITIAL_PASSWORD`. Si la dejó vacía, la contraseña generada se imprime en el log del primer arranque. Cámbiela desde **Perfil**.
+
+### Paso 6: Servicio en producción (systemd + Gunicorn)
+
+Archivo `/etc/systemd/system/biometrico.service`:
+
+```ini
+[Unit]
+Description=Gunicorn instance to serve Acceso Biometrico
+After=network.target
+
+[Service]
+User=<usuario>
+Group=www-data
+WorkingDirectory=<ruta del proyecto>
+Environment="PATH=<ruta del proyecto>/venv/bin"
+ExecStart=<ruta del proyecto>/venv/bin/gunicorn --workers 3 --bind 0.0.0.0:5000 app:app
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now biometrico.service
+```
+
+El usuario del servicio debe poder leer `instance/.env` y escribir en `uploads/` y en `last_seen.txt`. Configure Nginx como proxy inverso con SSL hacia el puerto 5000.
+
+### Paso 7: Firmware del NodeMCU
+
+1. Abra [nodered5.ino](nodered5.ino) en Arduino IDE (placa NodeMCU 1.0, librerías `WiFiManager` y `LittleFS`).
+2. Reemplace los marcadores **solo en su copia local**:
+   - `CAMBIAR_TOKEN_NODE` → valor de `TOKEN_NODE`.
+   - `CAMBIAR_PASS_HIKVISION` → contraseña del biométrico.
+   - Revise `HOST_URL` e `ip_bio`.
+3. Flashee el NodeMCU. **No haga commit** del archivo con los valores reales.
+4. En el primer arranque, conéctese a la red WiFi `NODE_PUERTA_ISTAE` para configurar la red del instituto.
 
 ---
 
-## Parte 2: Actualización de una Implementación Existente
+## Parte 2: Actualización de una instalación existente
 
-Siga estos pasos cuando haya una nueva versión del software y necesite actualizar la aplicación que ya está en producción sin perder los datos existentes.
+### Paso 1: Respaldo
 
-### Paso 1: Actualizar el Código Fuente
+Antes de actualizar, respalde los datos que no están en git:
 
-1.  Conéctese al servidor donde se está ejecutando la aplicación.
-2.  Navegue al directorio del proyecto y **descargue los últimos cambios** desde el repositorio de Git.
-    ```bash
-    cd <NOMBRE_DEL_DIRECTORIO>
-    git pull
-    ```
-3.  **Active el entorno virtual**.
-    ```bash
-    source .venv/bin/activate
-    ```
-4.  **Actualice las dependencias** por si se ha añadido alguna nueva librería.
-    ```bash
-    pip install -r requirements.txt
-    ```
+```bash
+tar czf ~/respaldo_istae_$(date +%Y%m%d).tgz instance/ uploads/
+```
 
-### Paso 2: Actualización Manual de la Base de Datos (Migración)
+> **Importante (actualización a la versión con `.gitignore` nuevo):** versiones anteriores versionaban `venv/`, `uploads/` y la base SQLite. Al actualizar desde una de ellas, `git pull` **borra esas carpetas del disco**. Antes del pull, quítelas del índice:
+> ```bash
+> git rm -r -q --cached venv __pycache__ instance uploads app_resp.py
+> git commit -m "chore: dejar de versionar archivos locales"
+> ```
+> o restaure `uploads/` desde el respaldo y recree `venv/` (`python3 -m venv venv && venv/bin/pip install -r requirements.txt`) después del pull.
 
-Esta es la parte más crítica. Cuando el código nuevo requiere campos adicionales en la base de datos, `db.create_all()` no los añadirá. Debe hacerlo manualmente con comandos SQL.
+### Paso 2: Actualizar el código
 
-1.  **Inicie sesión en cPanel** y abra **phpMyAdmin**.
-2.  **Seleccione la base de datos** de su aplicación en el menú de la izquierda. Según su captura de pantalla, el nombre de su base de datos es `user1_biom`.
-3.  Haga clic en la pestaña **"SQL"** para abrir una ventana donde puede ejecutar comandos.
-4.  **Copie y ejecute el siguiente comando SQL**. Las imágenes que adjuntó muestran que a su tabla `logs` le faltan las columnas para la asistencia remota. Este comando las añadirá sin borrar ningún dato existente.
+```bash
+cd <NOMBRE_DEL_DIRECTORIO>
+git pull
+source venv/bin/activate
+pip install -r requirements.txt
+```
 
-    ```sql
-    ALTER TABLE `logs`
-    ADD COLUMN `latitud` FLOAT NULL DEFAULT NULL AFTER `origen`,
-    ADD COLUMN `longitud` FLOAT NULL DEFAULT NULL AFTER `latitud`,
-    ADD COLUMN `descripcion` TEXT NULL DEFAULT NULL AFTER `longitud`,
-    ADD COLUMN `foto_path` VARCHAR(255) NULL DEFAULT NULL AFTER `descripcion`;
-    ```
+Si la actualización mueve los secretos a `instance/.env` y el archivo aún no existe, créelo (Parte 1, Paso 4) **antes** de reiniciar, o la aplicación no arrancará.
 
-5.  **Verificación**: Después de ejecutar el comando, vaya a la estructura de la tabla `logs` y verifique que las nuevas columnas (`latitud`, `longitud`, `descripcion`, `foto_path`) ahora existen.
+### Paso 3: Migraciones de base de datos
 
-### Paso 3: Reiniciar la Aplicación
+`db.create_all()` crea tablas nuevas pero no agrega columnas a tablas existentes.
 
-Para que todos los cambios surtan efecto (tanto el nuevo código como la nueva estructura de la base de datos), debe reiniciar el proceso de la aplicación Flask. En producción, la aplicación corre sobre **Gunicorn** administrado por **systemd** con el nombre `biometrico.service`.
+- **Automáticas:** al arrancar, la app agrega `comandos.creado` si falta.
+- **Manuales:** instalaciones muy antiguas sin las columnas de asistencia remota en `logs` necesitan este SQL (phpMyAdmin o cliente MySQL):
+  ```sql
+  ALTER TABLE `logs`
+  ADD COLUMN `latitud` FLOAT NULL DEFAULT NULL AFTER `origen`,
+  ADD COLUMN `longitud` FLOAT NULL DEFAULT NULL AFTER `latitud`,
+  ADD COLUMN `descripcion` TEXT NULL DEFAULT NULL AFTER `longitud`,
+  ADD COLUMN `foto_path` VARCHAR(255) NULL DEFAULT NULL AFTER `descripcion`;
+  ```
+  Las columnas `usuarios.face_descriptor` y la tabla `config_sistema` también deben existir; la tabla se crea sola, la columna se agrega con:
+  ```sql
+  ALTER TABLE `usuarios` ADD COLUMN `face_descriptor` TEXT NULL;
+  ```
+
+### Paso 4: Reiniciar la aplicación
 
 ```bash
 sudo systemctl restart biometrico.service
-```
-
-**Importante:** Cada vez que se modifique el archivo `app.py`, es obligatorio reiniciar el servicio. Los cambios en el código fuente no se reflejan automáticamente en el servidor hasta que Gunicorn recargue los módulos Python.
-
-Para verificar que el servicio está corriendo correctamente:
-```bash
 sudo systemctl status biometrico.service
 ```
 
-Una vez reiniciada, la aplicación funcionará con las nuevas características y seguirá utilizando todos los datos históricos que ya tenía almacenados.
+Es obligatorio reiniciar después de cualquier cambio en el código: Gunicorn no recarga los módulos solo. Tras el reinicio, los usuarios con una página abierta verán una vez el aviso "La sesión del formulario expiró" si la versión anterior no tenía CSRF.
+
+### Paso 5: Activar el token del hardware
+
+Si `EXIGIR_TOKEN_HARDWARE` está en `false`:
+
+1. Flashee el firmware que envía `X-Token` (Parte 1, Paso 7).
+2. Compruebe en el panel que el hardware aparece "en línea".
+3. Cambie `EXIGIR_TOKEN_HARDWARE=true` en `instance/.env` y reinicie el servicio.
+
+Si activa el token antes de flashear, el NodeMCU deja de recibir comandos y de actualizar la lista blanca.
 
 ---
 
-## Parte 3: Verificación del Hardware Biométrico
+## Parte 3: Rotación de credenciales
 
-Si las marcaciones de huella no se registran en la interfaz web, verificar el siguiente checklist en orden:
+Si alguna credencial se expuso (por ejemplo, en el historial de git):
 
-1. **Cable de red del biométrico:** Asegurar que el cable Ethernet del Hikvision DS-K1T8003EF (IP fija `192.168.1.22`) esté firmemente conectado. Sin conexión de red, el biométrico no puede enviar eventos ISAPI al NodeMCU.
-2. **Conectividad de red:** Desde la red local, hacer ping a `192.168.1.22` para confirmar que el biométrico es accesible.
-3. **NodeMCU conectado a WiFi:** Verificar que el LED del NodeMCU indique conexión WiFi activa. Si no se conecta, el NodeMCU creará un portal cautivo llamado `NODE_PUERTA_ISTAE` para configuración.
-4. **Monitor Serie:** Conectar el NodeMCU por USB y abrir el Monitor Serie a 115200 baudios para ver los mensajes de diagnóstico del firmware.
-5. **Servicio Gunicorn:** Verificar que el servicio `biometrico.service` esté activo en el servidor.
+| Credencial | Dónde cambiarla | Efecto |
+|---|---|---|
+| Contraseña MySQL | Panel del servidor + `DB_PASS` | Reiniciar servicio |
+| `SECRET_KEY` | `instance/.env` | Cierra todas las sesiones |
+| `TOKEN_NODE` | `instance/.env` + reflashear firmware | El hardware falla hasta reflashear |
+| Contraseña Hikvision | Interfaz del biométrico + reflashear firmware | — |
+| Contraseña `admin` | Perfil del admin en la web | — |
+
+---
+
+## Parte 4: Verificación del hardware biométrico
+
+Si las marcaciones de huella no aparecen en el sistema, revise en orden:
+
+1. **Cable de red del biométrico:** el Hikvision DS-K1T8003EF (IP fija `192.168.1.22`) debe estar conectado por Ethernet.
+2. **Conectividad:** desde la red local, `ping 192.168.1.22`.
+3. **WiFi del NodeMCU:** si no se conecta, crea el portal `NODE_PUERTA_ISTAE` para configurarlo.
+4. **Monitor Serie:** NodeMCU por USB a 115200 baudios; muestra eventos recibidos, respuestas del servidor y la cola offline.
+5. **Token:** un `403` en el Monitor Serie indica que el `TOKEN_NODE` del firmware no coincide con el del servidor.
+6. **Servicio:** `sudo systemctl status biometrico.service` debe estar activo.
+7. **Estado en el panel:** se basa en `last_seen.txt` (última consulta del NodeMCU, umbral 60 s).

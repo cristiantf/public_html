@@ -1,74 +1,80 @@
 # Sistema de Control de Acceso Biométrico - ISTAE
 
-Este proyecto es un sistema de control de acceso biométrico basado en la web, desarrollado para el ISTAE. Gestiona el acceso de usuarios a través de una interfaz web y un componente de hardware (ESP8266 con sensor biométrico Hikvision DS-K1T8003EF). El sistema registra cada intento de acceso y proporciona un panel de control avanzado para administradores.
+Sistema web de control de acceso y asistencia docente del ISTAE. Integra un biométrico de huella Hikvision DS-K1T8003EF, un NodeMCU ESP8266 que controla la cerradura y un backend Flask con panel administrativo, asistencia remota (GPS, foto y reconocimiento facial) y reportes Excel.
 
-## Características Actualizadas
+## Características
 
-- **Autenticación de usuarios:** Roles separados para administradores y docentes.
-- **Panel de control Interactivo (Dashboard):** Muestra el estado del hardware (En línea/Desconectado) en tiempo real y el volumen exacto de asistencias procesadas en el día, usando AJAX.
-- **Módulos Administrativos Independientes:** La creación de docentes, el registro de permisos, reportes Excel y sincronización horaria operan en sus propias páginas para una experiencia más inmersiva y tradicional.
-- **Gestión Paginada de Datos:** La revisión de asistencias y permisos cuenta con Paginación inteligente en el servidor (mostrando bloques de 20-30 registros a la vez), lo cual protege al servidor de quedarse sin memoria cuando el sistema escala.
-- **Apertura remota de la puerta:** Vía asincrónica a través de la interfaz web.
-- **Registro diferenciado de eventos:** El sistema distingue entre accesos con apertura de puerta (`Asistencia + puerta`) y marcaciones sin apertura (`Asistencia`) según el estado reportado por el hardware.
-- **Asistencia Remota Configurable:** El administrador puede activar, desactivar o programar (por fechas y horas) la disponibilidad del registro de asistencia vía web (GPS) desde el panel de control.
-- **Estética Corporativa:** Integración del logotipo e imagen institucional del ISTAE en todas las vistas (Login, Dashboard, Favicon).
+- **Roles:** administrador y docente, con verificación de rol en cada ruta administrativa.
+- **Dashboard en tiempo real (AJAX):** últimas marcaciones, total de asistencias del día y estado del hardware (en línea/desconectado).
+- **Gestión de docentes, asistencias y permisos:** vistas dedicadas con paginación en el servidor (20–30 registros por página).
+- **Apertura remota de la puerta:** mediante una cola de comandos que el NodeMCU consulta; los comandos caducan a los 60 s.
+- **Registro diferenciado de eventos:** `Asistencia + puerta` (usuario en lista blanca) y `Asistencia` (marcación sin apertura).
+- **Asistencia remota configurable:** el admin la activa, desactiva o programa por rango de fechas y horas. Exige GPS, admite foto de evidencia y, opcionalmente, verificación facial (Face ID con face-api.js).
+- **Reportes Excel:** reporte matricial de asistencia (mañana/tarde, con permisos) y reporte de permisos.
+- **Sincronización horaria** del biométrico desde el panel.
+- **Seguridad:** protección CSRF, secretos fuera del código, token del hardware, validación de archivos subidos (ver [documentacion_tecnica.md](documentacion_tecnica.md#5-seguridad)).
 
-## Pila Tecnológica
+## Pila tecnológica
 
-- **Backend:** Flask, Flask-SQLAlchemy, Flask-Login. (Uso intensivo del plugin nativo `.paginate()`).
-- **Base de datos:** MySQL (vía ORM SQLAlchemy).
-- **Frontend:** Bootstrap 5, Jinja2, JavaScript.
-- **Hardware:** NodeMCU ESP8266 + Relé + Hikvision DS-K1T8003EF (Sensor biométrico de huella dactilar).
+- **Backend:** Flask 3, Flask-SQLAlchemy, Flask-Login, openpyxl, Pillow.
+- **Base de datos:** MySQL (PyMySQL) vía SQLAlchemy.
+- **Frontend:** Jinja2, Bootstrap 5, JavaScript, face-api.js (modelos locales en `static/models/`).
+- **Hardware:** NodeMCU ESP8266 + relé + Hikvision DS-K1T8003EF (ISAPI con Digest Auth). Firmware: [nodered5.ino](nodered5.ino) v3.0.
+- **Producción:** Nginx (SSL) → Gunicorn (3 workers) administrado por systemd (`biometrico.service`).
 
-## Flujo de Datos del Hardware (`nodered5.ino`)
+## Instalación rápida
 
-El firmware del NodeMCU se comunica con el biométrico Hikvision vía protocolo **ISAPI con autenticación Digest (QOP)**, escuchando eventos en streaming. Cada marcación de huella detectada se reenvía inmediatamente al backend en la nube.
+```bash
+git clone <url>
+cd <directorio>
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
 
-- El hardware efectúa polling constante con el backend web.
-- Cada petición realizada (asistencia, check de comando o sincronización de lista blanca) actualiza una estampa de tiempo en el servidor, lo cual permite al panel central conocer de inmediato si el dispositivo sigue activo y con energía.
-- La sincronización de la hora del biométrico se realiza bajo demanda desde el panel admin usando comandos `SET_TIME` a través de la API ISAPI (PUT con Digest Auth).
+Cree `instance/.env` con las credenciales (ver [GUIA_IMPLEMENTACION.md](GUIA_IMPLEMENTACION.md), Parte 1, Paso 4). `config.py` no contiene secretos y `instance/` está excluida de git.
 
-## Configuración e Instalación
+En producción, después de cualquier cambio en el código:
 
-1.  **Clonar el repositorio y entorno:**
-    ```bash
-    git clone <url>
-    python -m venv venv
-    source venv/bin/activate
-    pip install -r requirements.txt
-    ```
+```bash
+sudo systemctl restart biometrico.service
+```
 
-2.  **Configurar la aplicación:**
-    - Crea `instance/.env` con las credenciales (ver `GUIA_IMPLEMENTACION.md`, Paso 4). `config.py` no contiene secretos.
-    - Asegura que `TOKEN_NODE` coincide con el del ESP8266 (`nodered5.ino`).
+## API del hardware (NodeMCU)
 
-3.  **Ejecución:**
-    Para producción, usar Gunicorn y reiniciar el demonio en systemd:
-    ```bash
-    sudo systemctl restart biometrico.service
-    ```
+| Endpoint | Uso | Autenticación |
+|---|---|---|
+| `GET /api/sincronizar` | Lista blanca de `biometric_id` con acceso a puerta, separados por comas | Cabecera `X-Token` (si `EXIGIR_TOKEN_HARDWARE=true`) |
+| `GET /api/check_comando` | Devuelve el comando pendiente más antiguo (`ABRIR`, `SET_TIME\|<iso>`) o `NADA` | Cabecera `X-Token` (si `EXIGIR_TOKEN_HARDWARE=true`) |
+| `POST /api/recibir_log` | Registra una marcación de huella | Campo `token` en el JSON (siempre) |
 
-## Endpoints de la API Central (ESP8266)
+Cualquiera de los tres actualiza el estado "en línea" del hardware. Los comandos que no se entregan en 60 s pasan a `EXPIRADO`. Detalle completo en [documentacion_tecnica.md](documentacion_tecnica.md#3-api-del-hardware).
 
-- `GET /api/sincronizar`: Devuelve IDs biométricos autorizados (lista blanca separada por comas).
-- `POST /api/recibir_log`: Recibe logs presenciales. Acepta JSON con campos `id`, `estado` (`EXITO`/`DENEGADO`), `fecha_dispositivo` (ISO 8601), `token` y `origen`. Ambos estados se registran como asistencia válida en los reportes.
-- `GET /api/check_comando`: Comprueba si hay comandos remotos pendientes (`ABRIR`, `SET_TIME|<iso_time>`, `NADA`).
-*(Cualquiera de los tres endpoints actualiza el estado "Online" del Hardware).*
+## Modelos de datos
 
-`/api/sincronizar` y `/api/check_comando` exigen la cabecera `X-Token` cuando `EXIGIR_TOKEN_HARDWARE=true`. Los comandos que no se entregan en 60 s se marcan como `EXPIRADO`.
+- **User** (`usuarios`): usuarios, rol, acceso a puerta y descriptor facial.
+- **Log** (`logs`): marcaciones (huella y remotas) y aperturas remotas, con GPS y foto.
+- **Comando** (`comandos`): cola de órdenes hacia el hardware, con fecha de creación para su caducidad.
+- **Permiso** (`permisos`): ausencias justificadas por docente y fecha.
+- **ConfigSistema** (`config_sistema`): configuración global (asistencia remota, Face ID).
 
-## Modelos de la Base de Datos
+## Documentación
 
-- **User:** Maneja usuarios y privilegios.
-- **Log:** Historial de accesos, asistencias y eventos remotos.
-- **Comando:** Puente asincrónico para enviar órdenes (abrir puerta, sincronizar hora) desde la Web hacia el hardware.
-- **Permiso:** Manejo de excepciones, ausencias y permisos administrativos.
-- **ConfigSistema:** Almacena la configuración global y reglas de negocio dinámicas (ej: habilitación de asistencia remota).
+| Documento | Contenido |
+|---|---|
+| [documentacion_tecnica.md](documentacion_tecnica.md) | Arquitectura, modelos, API, rutas web, flujos y seguridad |
+| [GUIA_IMPLEMENTACION.md](GUIA_IMPLEMENTACION.md) | Instalación desde cero, actualización y verificación del hardware |
+| [FLUJO_ASISTENCIA_REMOTA.md](FLUJO_ASISTENCIA_REMOTA.md) | Flujo completo de la asistencia remota y Face ID |
+| [estadoactual.md](estadoactual.md) | Estado del proyecto, incidencias y deuda técnica |
+| `files/`, `isapi.pdf` | Manual de referencia ISAPI de Hikvision |
 
-## Troubleshooting
+## Solución de problemas
 
-### El biométrico marca pero no registra en la nube
-1. **Verificar conexión física:** Asegurar que el cable de red del biométrico Hikvision (IP `192.168.1.22`) esté conectado y que el dispositivo sea accesible desde la red local del NodeMCU.
-2. **Verificar Gunicorn:** `sudo systemctl status biometrico.service` — debe estar `active (running)`.
-3. **Reiniciar servicio:** `sudo systemctl restart biometrico.service` — necesario después de cada cambio en `app.py`.
-4. **Monitor Serie del NodeMCU:** Conectar por USB y abrir Monitor Serie a 115200 baudios para ver si el ESP8266 recibe eventos del biométrico y si logra enviarlos al servidor.
+### El biométrico marca pero no se registra en el sistema
+1. **Conexión física:** el cable de red del Hikvision (IP `192.168.1.22`) debe estar conectado y el equipo accesible desde la red del NodeMCU.
+2. **Servicio:** `sudo systemctl status biometrico.service` debe mostrar `active (running)`.
+3. **Token:** si `EXIGIR_TOKEN_HARDWARE=true`, el firmware cargado debe enviar `X-Token` con el mismo `TOKEN_NODE` de `instance/.env`.
+4. **Monitor Serie:** conecte el NodeMCU por USB a 115200 baudios para ver si recibe eventos del biométrico y si el servidor responde.
+
+### El panel muestra el hardware "Desconectado"
+El estado se calcula con la última consulta del NodeMCU (archivo `last_seen.txt`, umbral de 60 s). Revise WiFi del NodeMCU (portal `NODE_PUERTA_ISTAE`) y que el servidor no responda `403` al token.

@@ -1,123 +1,110 @@
-# Documentación del Flujo de Asistencia Remota
+# Flujo de Asistencia Remota
 
-Este documento detalla el proceso técnico completo para el registro de una asistencia remota por parte de un docente, desde la interacción en la interfaz de usuario (frontend) hasta el procesamiento y almacenamiento en el servidor (backend).
+Proceso completo de una asistencia remota de un docente: desde la interfaz del navegador hasta el registro en la base de datos.
 
-## Resumen del Flujo
+## Resumen
 
-El proceso se puede dividir en dos fases principales:
-
-1.  **Frontend (Lado del Cliente):** El navegador del docente captura la ubicación GPS y la foto, y empaqueta esta información en un formulario.
-2.  **Backend (Lado del Servidor):** El servidor Flask recibe los datos, valida la información, guarda el archivo de la foto y registra todos los detalles en la base de datos.
-
----
-
-## 1. Frontend: Interfaz del Docente (`templates/docente.html`)
-
-La interacción del usuario ocurre dentro de una ventana modal que se activa al presionar el botón "Marcar Asistencia Remota".
-
-### Paso 1.1: Activación y Captura de GPS
-
-1.  **Disparador:** El docente hace clic en el botón que abre el modal de asistencia.
-2.  **Geolocalización:** Inmediatamente, un script de JavaScript utiliza la API de geolocalización del navegador:
-    ```javascript
-    navigator.geolocation.getCurrentPosition(successCallback, errorCallback);
-    ```
-3.  **Permisos del Usuario:** El navegador solicita al docente permiso para acceder a su ubicación.
-4.  **Poblar el Formulario:**
-    *   Si el usuario acepta, la función `successCallback` recibe un objeto `position` que contiene las coordenadas.
-    *   El script inserta la latitud y la longitud en dos campos ocultos (`<input type="hidden">`) dentro del formulario del modal. Esto asegura que las coordenadas se envíen junto con el resto de los datos sin que el usuario las vea o modifique directamente.
-
-### Paso 1.2: Entrada de Datos del Usuario
-
-El formulario (`<form>`) contiene tres campos clave para el usuario:
-
-1.  **Descripción (`<textarea name="descripcion">`):** Un campo de texto opcional para que el docente añada cualquier observación relevante.
-
-2.  **Foto (`<input type="file" name="foto" accept="image/*" capture="camera">`):** Este es el campo más importante para la evidencia.
-    *   `accept="image/*"`: Limita la selección de archivos a solo imágenes.
-    *   `capture="camera"`: En dispositivos móviles, este atributo le indica al navegador que abra directamente la aplicación de la cámara, forzando a que la foto sea tomada en el momento.
-
-3.  **Campos Ocultos de GPS:**
-    ```html
-    <input type="hidden" name="latitud" id="latitud-input">
-    <input type="hidden" name="longitud" id="longitud-input">
-    ```
-
-### Paso 1.3: Envío del Formulario
-
-1.  **Acción de Envío:** El docente presiona el botón "Registrar Asistencia".
-2.  **Método y Destino:** El formulario se envía a través de una petición `POST` a la ruta `/docente/marcar_web` del servidor Flask.
-3.  **Tipo de Codificación:** Es crucial que el formulario incluya el atributo `enctype="multipart/form-data"`. Esto es necesario para poder enviar archivos (la foto) junto con los datos de texto.
-
-    ```html
-    <form action="{{ url_for('docente_marcar') }}" method="POST" enctype="multipart/form-data">
-        <!-- ... campos del formulario ... -->
-    </form>
-    ```
+1. **Disponibilidad:** el administrador decide cuándo está permitida (`ConfigSistema`).
+2. **Registro de rostro (si se exige Face ID):** el docente registra su rostro una vez desde su perfil.
+3. **Frontend:** el navegador obtiene el GPS, verifica el rostro (si aplica) y envía el formulario con la foto opcional.
+4. **Backend:** Flask valida disponibilidad, CSRF, rostro, GPS y foto, y registra el `Log`.
 
 ---
 
-## 2. Backend: Procesamiento en el Servidor (`app.py`)
+## 1. Configuración (administrador)
 
-La lógica para manejar la petición se encuentra en la función `docente_marcar`.
+Ruta `/admin/config_asistencia_remota`, guardada en la tabla `config_sistema`:
 
-### Paso 2.1: Recepción de la Petición
+| Campo | Efecto |
+|---|---|
+| `asistencia_remota_activa` | Interruptor general. |
+| `ar_fecha_inicio`, `ar_fecha_fin` | Rango de fechas permitido (opcional). |
+| `ar_hora_inicio`, `ar_hora_fin` | Rango horario diario permitido (opcional; se aplica solo si ambos están definidos). |
+| `requiere_face_id` | Exige verificación facial para marcar. |
 
-1.  **Ruta y Método:** La función está decorada para aceptar peticiones `POST` en la ruta `/docente/marcar_web`.
-    ```python
-    @app.route('/docente/marcar_web', methods=['POST'])
-    @login_required
-    def docente_marcar():
-        # ...
-    ```
-2.  **Autenticación:** El decorador `@login_required` asegura que solo un usuario autenticado (en este caso, un docente) pueda realizar esta acción. El objeto `current_user` está disponible con la información del docente que realiza la petición.
+La función `asistencia_remota_permitida()` evalúa estas reglas en hora de Ecuador. Si no hay configuración guardada, la asistencia remota está permitida.
 
-### Paso 2.2: Extracción y Validación de Datos
+---
 
-1.  **Datos de Texto:** Se extraen la latitud, longitud y descripción del objeto `request.form`.
-    ```python
-    lat = request.form.get('latitud')
-    lon = request.form.get('longitud')
-    descripcion = request.form.get('descripcion')
-    ```
-2.  **Archivo de Foto:** La foto se extrae del objeto `request.files`.
-    ```python
-    foto = request.files.get('foto')
-    ```
-3.  **Validación de GPS:** El código verifica que las coordenadas GPS se hayan recibido. Si no, devuelve un mensaje de error al usuario.
+## 2. Registro del rostro (`templates/perfil.html`)
 
-### Paso 2.3: Manejo y Almacenamiento de la Foto
+1. El docente pulsa **Registrar Rostro**. Se cargan los modelos de face-api.js desde `static/models/` (`tiny_face_detector`, `face_landmark_68`, `face_recognition`).
+2. Durante unos 4 segundos se capturan 20 fotogramas con una sola cara detectada; se piden movimientos de cabeza como prueba de vida básica.
+3. Se promedian los descriptores (128 valores) y se envían a `POST /docente/registrar_rostro` como JSON, con la cabecera `X-CSRFToken`.
+4. El servidor exige exactamente 128 números finitos y guarda el descriptor en `usuarios.face_descriptor`.
+5. **Un docente no puede reemplazar su rostro.** Si necesita cambiarlo, el administrador lo restablece desde **Editar docente → Restablecer Rostro** (`POST /admin/docente/<id>/restablecer_rostro`) y el docente lo registra de nuevo. El botón **Cancelar** detiene la cámara durante el registro.
 
-1.  **Verificación del Archivo:** Se comprueba si el objeto `foto` existe y si tiene un nombre de archivo (es decir, si realmente se subió un archivo).
-2.  **Seguridad del Nombre:** Se utiliza la función `secure_filename()` de Werkzeug para limpiar el nombre del archivo y evitar ataques de travesía de directorios.
-3.  **Creación de un Nombre Único:** Para prevenir que los archivos se sobrescriban, se genera un nuevo nombre de archivo único, combinando el ID del usuario, la fecha/hora actual y el nombre original del archivo.
-    ```python
-    filename = secure_filename(f"{current_user.id}_{datetime.now().strftime('%Y%m%d%H%M%S')}_{foto.filename}")
-    ```
-4.  **Guardado Físico:** El archivo de la foto se guarda en el servidor, dentro de la carpeta `uploads`, usando el nombre único generado.
-    ```python
-    foto.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-    ```
+---
 
-### Paso 2.4: Registro en la Base de Datos
+## 3. Frontend: marcación (`templates/docente.html`)
 
-1.  **Creación del Objeto `Log`:** Se instancia un nuevo modelo `Log` de SQLAlchemy.
-2.  **Poblar el Objeto:** Se rellenan todos los campos del objeto con la información recopilada:
-    *   `fecha`: Se usa la hora del servidor (`datetime.now()`) para garantizar la consistencia.
-    *   `usuario_id`: Se obtiene de `current_user.biometric_id`.
-    *   `tipo_evento`: Se establece como "Asistencia".
-    *   `origen`: Se establece como "Asistencia remota".
-    *   `latitud`, `longitud`, `descripcion`: Los datos extraídos del formulario.
-    *   `foto_path`: **Este es el campo clave.** Se guarda el `filename` (el nombre único del archivo), que actúa como el enlace entre el registro de la base de datos y el archivo físico de la foto en el servidor.
-3.  **Commit a la Base de Datos:** Se añade el nuevo objeto `Log` a la sesión de la base de datos y se confirman los cambios.
-    ```python
-    db.session.add(nuevo_log)
-    db.session.commit()
-    ```
+La marcación ocurre en un modal que se abre con **Marcar Asistencia Remota** (solo visible si la asistencia remota está permitida).
 
-### Paso 2.5: Confirmación al Usuario (Feedback)
+### 3.1. GPS
+`navigator.geolocation.getCurrentPosition()` solicita la ubicación. Si el docente la concede, la latitud y longitud se guardan en los campos ocultos `latitud` y `longitud`. Sin GPS el botón **CONFIRMAR** no se habilita.
 
-1.  **Mensaje Flash:** Se genera un mensaje de éxito (`flash('Asistencia remota registrada con éxito.')`) que se mostrará al usuario en la siguiente página.
-2.  **Redirección:** Se redirige al docente de vuelta a su dashboard, donde verá el mensaje de confirmación.
+### 3.2. Verificación facial (si `requiere_face_id`)
+1. Se activa la cámara frontal y se analizan fotogramas cada 300 ms con `TinyFaceDetector`.
+2. Cuando hay exactamente una cara con confianza > 0,70, su descriptor se guarda en el campo oculto `live_face_descriptor` y se apaga la cámara.
+3. La decisión final la toma el servidor (§4.3), no el navegador.
 
-Este ciclo completo asegura que la asistencia remota se registre de forma segura, con toda la evidencia necesaria y con confirmación para el usuario.
+### 3.3. Datos del formulario
+
+| Campo | Tipo | Obligatorio |
+|---|---|---|
+| `csrf_token` | oculto | Sí |
+| `latitud`, `longitud` | ocultos | Sí |
+| `live_face_descriptor` | oculto | Solo con Face ID |
+| `descripcion` | texto | No |
+| `foto` | archivo (`accept="image/*" capture="environment"`) | No |
+
+El formulario se envía por `POST` a `/docente/marcar_web` con `enctype="multipart/form-data"`.
+
+---
+
+## 4. Backend: `docente_marcar()` en `app.py`
+
+### 4.1. Disponibilidad y CSRF
+- `verificar_csrf()` (antes de cada `POST`) rechaza la petición si el token no coincide con el de la sesión.
+- Si `asistencia_remota_permitida()` es falso, se rechaza con el aviso "La asistencia remota no está habilitada en este momento".
+
+### 4.2. Autenticación
+`@login_required` garantiza un usuario autenticado; el registro se asocia a `current_user.biometric_id`.
+
+### 4.3. Verificación facial
+Si `requiere_face_id` está activo:
+1. El docente debe tener un rostro registrado y haber enviado `live_face_descriptor`.
+2. Ambos descriptores deben ser listas de 128 números (`descriptor_valido()`); un descriptor vacío o incompleto se rechaza.
+3. Se calcula la distancia euclidiana; si es mayor que **0,55**, la marcación se rechaza.
+
+### 4.4. GPS
+Latitud y longitud deben ser números dentro de los rangos válidos (−90…90 y −180…180). Si no, se pide repetir.
+
+### 4.5. Foto de evidencia
+1. Extensión permitida: `.jpg`, `.jpeg`, `.png` o `.webp`.
+2. El contenido se verifica con Pillow (`es_imagen_valida()`); un archivo disfrazado de imagen se rechaza.
+3. Tamaño máximo de la petición: 16 MB; si se supera, se muestra un aviso.
+4. Nombre del archivo: `<user_id>_<YYYYMMDDHHMMSS><ext>` en hora de Ecuador, guardado en `uploads/`.
+
+### 4.6. Registro en la base de datos
+Se crea un `Log` con:
+- `fecha`: hora actual de Ecuador.
+- `usuario_id`: `current_user.biometric_id`.
+- `tipo_evento`: `Asistencia`; `origen`: `Asistencia remota`.
+- `latitud`, `longitud`, `descripcion`, `foto_path`.
+
+### 4.7. Respuesta
+Mensaje flash de éxito y redirección al panel del docente.
+
+---
+
+## 5. Consulta de la evidencia (administrador)
+
+En el dashboard y en **Gestión de Asistencias**, las marcaciones remotas muestran un botón que abre el modal `templates/includes/evidence_modal.html` con la descripción, un enlace a Google Maps y la foto. Las fotos se sirven por `/uploads/<archivo>`: el administrador puede ver todas; cada docente solo las suyas.
+
+---
+
+## 6. Limitaciones
+
+- La prueba de vida se hace solo en el navegador; el servidor solo compara descriptores.
+- Las coordenadas GPS las proporciona el navegador y pueden falsearse.

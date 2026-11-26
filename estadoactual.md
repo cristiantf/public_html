@@ -1,63 +1,74 @@
 # Estado Actual del Proyecto: Sistema de Control de Acceso ISTAE
 
-## 1. Resumen de Madurez
-El proyecto es una solución funcional e integral de extremo a extremo que involucra **hardware IoT (ESP8266/NodeMCU + Hikvision DS-K1T8003EF)** y un **backend web (Python/Flask)**. Tras una intensiva refactorización y estabilización, el proyecto cuenta con una arquitectura web escalable, firmware robusto con autenticación Digest QOP para comunicación con el biométrico, y un pipeline de datos confiable desde la huella hasta la base de datos en la nube.
+**Última actualización:** 26 de noviembre de 2026.
 
-**Última actualización:** 29 de junio de 2026.
+## 1. Resumen
 
-## 2. Componentes y su Estado
+Solución funcional de extremo a extremo: biométrico Hikvision DS-K1T8003EF, NodeMCU ESP8266 (firmware v3.0) y backend Flask en producción. En noviembre de 2026 se hizo una revisión de seguridad que corrigió fallos de autorización, Face ID, subida de archivos, comandos remotos, CSRF y manejo de secretos (ver §4).
 
-### 2.1 Backend Web (Flask)
-- **Estado:** ✅ Completamente implementado, estabilizado y en producción.
-- **Servicio:** Gunicorn (3 workers) administrado por systemd (`biometrico.service`), detrás de proxy inverso Nginx con SSL.
-- **Funcionalidades:** 
-  - Gestión de sesiones y roles de usuario (`admin`, `docente`).
-  - Creación, edición y eliminación de docentes a través de vistas dedicadas.
-  - Gestión de logs de asistencias y permisos **con paginación del lado del servidor** (ej: últimas 30 asistencias por página) para prevenir el agotamiento de memoria del servidor al escalar la base de datos.
-  - Vistas administrativas completamente modularizadas (`/admin/nuevo_docente`, `/admin/reportes`, `/admin/sincronizar_hora`, `/admin/config_asistencia_remota`, etc.) con métodos GET/POST limpios.
-  - **Asistencia Remota Configurable:** Control granular con panel dedicado para que el administrador decida (incluso con rangos de fechas y horas) cuándo los docentes pueden marcar su asistencia web.
-  - Generación de reportes dinámicos en Excel mediante `openpyxl`.
-  - Panel de control (Dashboard) con cálculo de métricas reales (Total de marcaciones diarias) y visualización del estado de conexión del Hardware (Online/Offline) basado en su último ping al servidor.
-  - **Diferenciación de eventos:** El endpoint `/api/recibir_log` procesa el campo `estado` enviado por el hardware para registrar marcaciones con apertura de puerta (`Asistencia + puerta`) y marcaciones sin apertura (`Asistencia`) por separado. Ambos tipos se incluyen en los reportes Excel.
-  - **Parseo robusto de fecha:** El servidor toma únicamente los primeros 19 caracteres de la fecha ISO 8601 recibida del hardware, descartando sufijos de zona horaria de forma segura para evitar incompatibilidades con MySQL.
+## 2. Componentes
 
-### 2.2 Hardware / Firmware IoT (C++ NodeMCU)
-- **Estado:** ✅ Desarrollado, estabilizado y en producción (`nodered5.ino`, versión v2.3).
+### 2.1 Backend web (Flask)
+- **Estado:** ✅ En producción. Gunicorn (3 workers) con systemd (`biometrico.service`) detrás de Nginx con SSL.
 - **Funcionalidades:**
-  - Configuración automática de WiFi vía `WiFiManager` (portal cautivo `NODE_PUERTA_ISTAE`).
-  - **Comunicación ISAPI con autenticación Digest QOP:** Conexión de streaming persistente al biométrico Hikvision para recibir eventos de huella en tiempo real.
-  - Validación de usuarios mediante listas blancas descargadas del servidor, activando relé (apertura de puerta por 3 segundos).
-  - Envío de marcaciones al servidor con estado diferenciado (`EXITO`/`DENEGADO`). Ambos se registran como asistencia válida en la BD (`Asistencia + puerta` o `Asistencia`).
-  - Sincronización de hora del biométrico bajo demanda vía comandos `SET_TIME` desde el panel admin, usando PUT con Digest Auth al ISAPI del Hikvision.
-  - Polling constante con los endpoints (`/api/check_comando` cada 3s, `/api/sincronizar` cada 10 min) que permiten al servidor medir su conectividad en tiempo real (umbral de 60 segundos).
+  - Roles `admin` y `docente`, con verificación de rol en todas las rutas administrativas.
+  - Gestión de docentes, asistencias y permisos con paginación en el servidor.
+  - Asistencia remota configurable por fechas y horas, con GPS, foto validada y Face ID opcional (face-api.js con `tiny_face_detector`).
+  - Restablecimiento del rostro de un docente por el administrador.
+  - Reportes Excel: matricial (mañana/tarde, huella o web, con permisos) y de permisos.
+  - Dashboard AJAX con asistencias del día y estado del hardware.
+  - Cola de comandos (`ABRIR`, `SET_TIME`) con caducidad de 60 s.
+  - Protección CSRF, secretos en `instance/.env` y token del hardware.
 
-### 2.3 Base de Datos (MySQL)
-- **Estado:** ✅ Esquema relacional implementado con SQLAlchemy.
-- **Modelos Principales:** `User`, `Log`, `Comando` y `Permiso`.
+### 2.2 Firmware IoT (`nodered5.ino`, v3.0)
+- **Estado:** ✅ En producción. La versión del repositorio envía la cabecera `X-Token`; **debe flashearse** antes de activar `EXIGIR_TOKEN_HARDWARE`.
+- **Funcionalidades:**
+  - WiFi con `WiFiManager` (portal `NODE_PUERTA_ISTAE`).
+  - Streaming ISAPI con Digest Auth (QOP) y reconexión con backoff exponencial.
+  - Lista blanca descargada cada 10 min; apertura de puerta por 3 s.
+  - Envío de marcaciones `EXITO`/`DENEGADO` con **cola offline en LittleFS** (hasta 50, reintento cada 15 s).
+  - Polling de comandos cada 3 s (`ABRIR`, `SET_TIME`, `REBOOT`).
+  - Monitor de memoria y LED de estado.
 
-### 2.4 Interfaz de Usuario (Frontend)
-- **Estado:** ✅ Completado, usando plantillas Jinja2 y Bootstrap 5.
-- **Funcionalidades:** 
-  - Dashboard central con monitor asíncrono (AJAX) que actualiza tabla de logs, conteo diario y estado del NodeMCU cada 3.5 segundos.
-  - Diseño unificado y elegante incluyendo el logotipo institucional en Favicon, Panel y Login.
-  - Barra lateral de navegación adaptativa que unifica todas las sub-vistas del administrador.
+### 2.3 Base de datos (MySQL)
+- **Estado:** ✅ Modelos `User`, `Log`, `Comando`, `Permiso`, `ConfigSistema`. La columna `comandos.creado` se agrega automáticamente al iniciar.
 
-## 3. Puntos Fuertes del Sistema
-1. **Integración robusta con hardware Hikvision:** El firmware soporta autenticación Digest con QOP, garantizando compatibilidad con firmwares modernos del biométrico.
-2. **Parseo de fecha estabilizado:** El procesamiento de la fecha del hardware se realiza de forma segura tomando solo los 19 caracteres relevantes del ISO 8601.
-3. **Escalabilidad Visual y de Memoria:** El desacoplamiento de formularios a vistas independientes y la inclusión de paginación preparan al sistema para soportar millones de registros sin penalizaciones de RAM.
-4. **Control Desacoplado de Puerta:** El hardware hace polling constante sin necesitar apertura de puertos en el router local.
+### 2.4 Frontend
+- **Estado:** ✅ Jinja2 + Bootstrap 5 con logotipo institucional. Acciones destructivas mediante formularios `POST` con token CSRF.
 
-## 4. Incidencias Resueltas
+## 3. Puntos fuertes
+1. Integración robusta con Hikvision (Digest con QOP) y tolerancia a cortes de red gracias a la cola offline.
+2. Control de puerta sin abrir puertos en la red local (polling) y con caducidad de comandos.
+3. Paginación y límites de consulta que protegen la memoria del servidor.
+4. Configuración sin secretos en el código.
 
-| Fecha | Incidencia | Causa Raíz | Resolución |
+## 4. Incidencias resueltas
+
+| Fecha | Incidencia | Causa raíz | Resolución |
 |---|---|---|---|
-| 2026-06-29 | Las marcaciones de huella no se registraban en la BD ni abrían la puerta | Cable de red del biométrico Hikvision (IP 192.168.1.22) desconectado. Sin conexión física, el biométrico no puede enviar eventos ISAPI al NodeMCU. | Reconexión del cable de red Ethernet al biométrico. |
-| 2026-06-29 | Bug en parseo de fecha que descartaba la hora | El código anterior dividía la fecha por el carácter `-`, lo cual cortaba el año de la cadena ISO 8601. | Corrección: tomar solo `fecha_str[:19]` en lugar de hacer `split('-')`. |
-| 2026-07-09 | Los reportes Excel no incluían marcaciones de docentes sin acceso a puerta | El tipo de evento `Acceso Denegado` no contenía la palabra "Asistencia" que los reportes usan como filtro. | Cambio de `Acceso Denegado` → `Asistencia` en el código y migración de 255 registros históricos en la BD. |
+| 2026-06-29 | Las marcaciones de huella no se registraban ni abrían la puerta | Cable de red del Hikvision (`192.168.1.22`) desconectado | Reconexión del cable Ethernet |
+| 2026-06-29 | El parseo de fecha descartaba la hora | Se dividía la fecha ISO 8601 por `-` | Usar `fecha_str[:19]` |
+| 2026-07-09 | Los reportes no incluían marcaciones de docentes sin acceso a puerta | El evento `Acceso Denegado` no contenía "Asistencia" | Cambio a `Asistencia` y migración de 255 registros |
+| 2026-11-26 | Un docente podía cambiar la contraseña del admin, abrir la puerta o eliminar docentes | Rutas sin verificación de rol | Verificación de rol admin en todas las rutas administrativas |
+| 2026-11-26 | Face ID se podía saltar con un descriptor vacío | La comparación no validaba la longitud | Exigir 128 valores numéricos |
+| 2026-11-26 | Se podían subir archivos HTML como evidencia (XSS) y de cualquier tamaño | Sin validación de tipo ni tamaño | Solo imágenes verificadas con Pillow, límite de 16 MB, acceso a evidencias por dueño |
+| 2026-11-26 | Un `ABRIR` enviado con el hardware desconectado abría la puerta horas después | Comandos sin caducidad | Caducidad de 60 s y aviso al admin |
+| 2026-11-26 | Acciones ejecutables desde enlaces externos (CSRF) | Sin token CSRF y acciones por `GET` | Token CSRF en todos los `POST` y acciones destructivas solo por `POST` |
+| 2026-11-26 | Credenciales y fotos de docentes publicadas en el repositorio | Secretos en `config.py`/firmware; `uploads/`, `venv/` y BD versionados | Secretos en `instance/.env`; archivos locales fuera de git |
+| 2026-11-26 | Errores 500 con fechas inválidas, duplicados, GPS no numérico o al eliminar docentes con permisos | Falta de validación | Validaciones y eliminación en cascada de permisos |
+| 2026-11-26 | Face ID fallaba en instalaciones nuevas | Modelos `tiny_face_detector` no estaban en git | Modelos agregados al repositorio |
 
-## 5. Áreas de Mejora y Deuda Técnica
-1. **Refactorización de `app.py` mediante Blueprints:** Aunque las rutas se desacoplaron lógicamente a vistas dedicadas en el HTML, todas las funciones siguen en el archivo maestro `app.py`. En el futuro, se recomienda estructurar mediante Flask Blueprints.
-2. **Testing Automático:** Las pruebas actuales son mayoritariamente manuales; implementar `pytest` para las APIs críticas sería ideal.
-3. **Caché en BD:** Si los datos siguen creciendo, la cuenta de marcaciones diarias en tiempo real en SQL podría causar un cuello de botella. Se sugiere el uso futuro de una capa de Redis.
-4. **Resiliencia offline en firmware:** Implementar cola de reintentos con `LittleFS` en el NodeMCU para marcaciones que no pudieron enviarse a la nube por fallas de WiFi.
+## 5. Pendientes operativos
+
+1. **Rotar las credenciales** que estuvieron publicadas en GitHub (MySQL, `SECRET_KEY`, `TOKEN_NODE`, contraseña del Hikvision y del admin). Ver [GUIA_IMPLEMENTACION.md](GUIA_IMPLEMENTACION.md), Parte 3.
+2. **Flashear el firmware** con `X-Token` y activar `EXIGIR_TOKEN_HARDWARE=true`.
+3. Evaluar la limpieza del historial de git (contiene credenciales y fotos antiguas).
+4. Revisar la conexión del NodeMCU: el último contacto registrado con el servidor fue el 10 de noviembre de 2026.
+
+## 6. Deuda técnica
+1. **Blueprints:** todas las rutas siguen en `app.py`; conviene dividirlas en módulos.
+2. **Pruebas automáticas:** no hay suite de `pytest`; las verificaciones de noviembre se hicieron con scripts sobre SQLite.
+3. **Migraciones:** adoptar Flask-Migrate (Alembic) en lugar de `ALTER TABLE` manuales o automáticos.
+4. **Prueba de vida de Face ID** validada en el servidor; hoy se hace solo en el navegador.
+5. **Límite de intentos de inicio de sesión** (rate limiting).
+6. **Caché** del conteo diario si el volumen de datos crece (por ejemplo, Redis).
