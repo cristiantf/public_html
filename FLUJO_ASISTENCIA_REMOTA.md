@@ -28,11 +28,12 @@ La función `asistencia_remota_permitida()` evalúa estas reglas en hora de Ecua
 
 ## 2. Registro del rostro (`templates/perfil.html`)
 
-1. El docente pulsa **Registrar Rostro**. Se cargan los modelos de face-api.js desde `static/models/` (`tiny_face_detector`, `face_landmark_68`, `face_recognition`).
-2. Durante unos 4 segundos se capturan 20 fotogramas con una sola cara detectada; se piden movimientos de cabeza como prueba de vida básica.
-3. Se promedian los descriptores (128 valores) y se envían a `POST /docente/registrar_rostro` como JSON, con la cabecera `X-CSRFToken`.
-4. El servidor exige exactamente 128 números finitos y guarda el descriptor en `usuarios.face_descriptor`.
-5. **Un docente no puede reemplazar su rostro.** Si necesita cambiarlo, el administrador lo restablece desde **Editar docente → Restablecer Rostro** (`POST /admin/docente/<id>/restablecer_rostro`) y el docente lo registra de nuevo. El botón **Cancelar** detiene la cámara durante el registro.
+1. El docente pulsa **Registrar Rostro**. `static/js/face-utils.js` carga face-api.js y los modelos de `static/models/` (`tiny_face_detector`, `face_landmark_68`, `face_recognition`) una sola vez; si fallan, se muestra el motivo y se puede reintentar.
+2. Se enciende la cámara frontal (vista espejo, con guía ovalada). El análisis corre en un bucle secuencial (un fotograma a la vez, sin solaparse), lo que evita que los celulares se saturen.
+3. Cada fotograma se acepta solo si hay **un único rostro**, con confianza ≥ 0,6 y de tamaño adecuado (ocupa entre el 22 % y el 75 % del ancho). Si no, se indica qué corregir: acercarse, alejarse, mejorar la luz o que aparezca una sola persona.
+4. Con **12 capturas válidas** se promedian los descriptores (128 valores) y se envían a `POST /docente/registrar_rostro` como JSON, con la cabecera `X-CSRFToken`.
+5. El servidor exige exactamente 128 números finitos y guarda el descriptor en `usuarios.face_descriptor`.
+6. **Un docente no puede reemplazar su rostro.** Si necesita cambiarlo, el administrador lo restablece desde **Editar docente → Restablecer Rostro** (`POST /admin/docente/<id>/restablecer_rostro`) y el docente lo registra de nuevo. El botón **Cancelar** detiene la cámara durante el registro.
 
 ---
 
@@ -44,9 +45,10 @@ La marcación ocurre en un modal que se abre con **Marcar Asistencia Remota** (s
 `navigator.geolocation.getCurrentPosition()` solicita la ubicación. Si el docente la concede, la latitud y longitud se guardan en los campos ocultos `latitud` y `longitud`. Sin GPS el botón **CONFIRMAR** no se habilita.
 
 ### 3.2. Verificación facial (si `requiere_face_id`)
-1. Se activa la cámara frontal y se analizan fotogramas cada 300 ms con `TinyFaceDetector`.
-2. Cuando hay exactamente una cara con confianza > 0,70, su descriptor se guarda en el campo oculto `live_face_descriptor` y se apaga la cámara.
-3. La decisión final la toma el servidor (§4.3), no el navegador.
+1. Al abrir el modal (a pantalla completa en celulares) se encienden el GPS y la cámara frontal; al cerrarlo de cualquier forma, la cámara se apaga.
+2. Se aplican los mismos criterios de calidad que en el registro y se toman **3 capturas válidas**, cuyo promedio se guarda en el campo oculto `live_face_descriptor`.
+3. Si la cámara o los modelos fallan, se muestra el motivo y un botón **Reintentar**.
+4. La decisión final la toma el servidor (§4.3), no el navegador.
 
 ### 3.3. Datos del formulario
 

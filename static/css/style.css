@@ -110,3 +110,83 @@ body.sidebar-collapsed .main-content { margin-left: 0; }
 /* --- ANIMACIONES --- */
 .fade-in { animation: fadeIn 0.4s ease-out; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+/* --- PÁGINAS SIN BARRA LATERAL (perfil) --- */
+body.no-sidebar .sidebar,
+body.no-sidebar #sidebar-toggler,
+body.no-sidebar .sidebar-overlay { display: none !important; }
+body.no-sidebar .navbar-top { left: 0 !important; }
+body.no-sidebar .main-content { margin-left: 0; }
+
+/* --- CÁMARA DE RECONOCIMIENTO FACIAL --- */
+.face-camera {
+    position: relative;
+    width: 100%;
+    max-width: 380px;
+    aspect-ratio: 3 / 4;              /* se ajusta a la cámara real al iniciar */
+    margin-left: auto;
+    margin-right: auto;
+    overflow: hidden;
+    border-radius: 18px;
+    border: 4px solid #0d6efd;
+    background: #000;
+    transition: border-color .2s ease;
+}
+.face-camera video,
+.face-camera canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1);            /* vista espejo, como una selfie */
+}
+.face-camera canvas { z-index: 2; pointer-events: none; }
+.face-camera .face-guide {
+    position: absolute;
+    z-index: 3;
+    left: 50%;
+    top: 46%;
+    width: 58%;
+    height: 66%;
+    transform: translate(-50%, -50%);
+    border: 3px dashed rgba(255, 255, 255, .55);
+    border-radius: 50%;
+    pointer-events: none;
+}
+.face-camera .face-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, .7);
+    text-align: center;
+    padding: 1rem;
+}
+.face-camera .face-overlay.d-none { display: none !important; }
+.face-tips { max-width: 380px; }
+.face-tips li { margin-bottom: .35rem; }
+
+/* --- AJUSTES PARA CELULARES --- */
+@media (max-width: 575.98px) {
+    .main-content { padding: 12px; }
+    .card { border-radius: 16px; }
+    .btn { padding: 10px 16px; }
+    .navbar-brand { font-size: 1rem; }
+    .breadcrumb { font-size: .85rem; margin-bottom: .5rem; }
+    .face-camera { max-width: 100%; }
+    /* Tablas compactas */
+    .table { font-size: .85rem; }
+    .table td, .table th { white-space: nowrap; }
+}
+
+/* Inputs de 16px en iOS para evitar el zoom automático al enfocar */
+@supports (-webkit-touch-callout: none) {
+    .form-control, .form-select { font-size: 16px; }
+}
+
+/* Modales cuyo contenido va dentro de un <form>: el cuerpo hace scroll y el pie queda visible */
+.modal-content > form { display: flex; flex-direction: column; min-height: 0; max-height: 100%; }
+.modal-content > form > .modal-body { overflow-y: auto; min-height: 0; }
