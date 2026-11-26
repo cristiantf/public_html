@@ -70,7 +70,7 @@
             </div>
             <div class="modal-footer border-0 bg-light p-3">
                 <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">Cancelar</button>
-                <a href="{{ url_for('admin_abrir') }}" class="btn btn-danger rounded-pill px-5 fw-bold shadow">CONFIRMAR ACCIÓN</a>
+                <form action="{{ url_for('admin_abrir') }}" method="POST" class="d-inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="btn btn-danger rounded-pill px-5 fw-bold shadow">CONFIRMAR ACCIÓN</button></form>
             </div>
         </div>
     </div>
@@ -177,7 +177,7 @@
                             </div>
                             <div class="btn-group">
                                 <a href="{{ url_for('editar_docente', id=d.id) }}" class="btn btn-sm btn-light border" title="Editar"><i class="bi bi-pencil text-primary"></i></a>
-                                <a href="{{ url_for('eliminar_docente', id=d.id) }}" class="btn btn-sm btn-light border text-danger" onclick="return confirm('¿Seguro de eliminar este docente?')"><i class="bi bi-trash"></i></a>
+                                <form action="{{ url_for('eliminar_docente', id=d.id) }}" method="POST" class="d-inline" onsubmit="return confirm('¿Seguro de eliminar este docente?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="btn btn-sm btn-light border text-danger rounded-0 rounded-end" title="Eliminar"><i class="bi bi-trash"></i></button></form>
                             </div>
                         </div>
                     </div>
@@ -305,11 +305,15 @@
      */
     async function togglePermiso(id, cb) {
         try {
-            await fetch(`/toggle_permiso/${id}`, {
+            const res = await fetch(`/toggle_permiso/${id}`, {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json'},
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content
+                },
                 body: JSON.stringify({estado: cb.checked})
             });
+            if (!res.ok) cb.checked = !cb.checked;
         } catch(e) {
             cb.checked = !cb.checked;
         }

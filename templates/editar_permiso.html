@@ -20,6 +20,7 @@
                 </div>
                 <div class="card-body p-4">
                     <form action="{{ url_for('actualizar_permiso') }}" method="POST">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <input type="hidden" name="permiso_id" value="{{ permiso.id }}">
                         
                         <div class="row g-3">

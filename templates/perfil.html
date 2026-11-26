@@ -31,6 +31,7 @@
                     <hr class="text-muted mb-4">
 
                     <form action="{{ url_for('actualizar_password') }}" method="POST" id="passwordForm">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <!-- Contraseña Actual -->
                         <div class="mb-3">
                             <label class="form-label small fw-bold text-muted">Contraseña Actual</label>
@@ -89,7 +90,7 @@
                         <div class="alert alert-success d-inline-block px-4 py-2 rounded-pill">
                             <i class="bi bi-check-circle-fill me-2"></i>Rostro Registrado
                         </div>
-                        <p class="small text-muted mt-2">Puedes volver a registrarlo si tienes problemas al marcar.</p>
+                        <p class="small text-muted mt-2">{% if current_user.rol == 'admin' %}Puedes volver a registrarlo si tienes problemas al marcar.{% else %}Si tienes problemas al marcar, pide al administrador que restablezca tu rostro.{% endif %}</p>
                         {% else %}
                         <div class="alert alert-warning d-inline-block px-4 py-2 rounded-pill">
                             <i class="bi bi-exclamation-triangle-fill me-2"></i>Sin rostro registrado
@@ -97,12 +98,14 @@
                         {% endif %}
                     </div>
 
+                    {% if not current_user.face_descriptor or current_user.rol == 'admin' %}
                     <button type="button" class="btn btn-dark fw-bold py-2 px-4 shadow-sm rounded-pill" id="btnInitFaceReg" onclick="initFaceRegistration()">
                         <i class="bi bi-camera-fill me-2"></i>{% if current_user.face_descriptor %}Actualizar Rostro{% else %}Registrar Rostro{% endif %}
                     </button>
                     <button type="button" class="btn btn-outline-danger fw-bold py-2 px-4 shadow-sm rounded-pill d-none ms-2" id="btnCancelFaceReg" onclick="cancelFaceRegistration()">
                         <i class="bi bi-x-circle me-2"></i>Cancelar
                     </button>
+                    {% endif %}
 
                     <!-- Contenedor del video oculto inicialmente -->
                     <div id="video-container" class="mt-4 d-none position-relative mx-auto" style="width: 320px; height: 240px; overflow: hidden; border-radius: 15px; border: 3px solid #0d6efd; background-color: #000;">
@@ -319,6 +322,7 @@
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content
                 },
                 body: JSON.stringify({ descriptor: descriptorArray })
             });

@@ -11,6 +11,7 @@ import json
 # Importamos app para el contexto, pero db y modelos dentro de las funciones 
 # para evitar importación circular si app.py también importa este driver.
 from app import app
+import config
 
 def guardar_log_remoto(uid, evento, origen="Huella", fecha_dispositivo=None):
     """
@@ -77,7 +78,7 @@ def test_http_enviar_log(uid, base_url="https://acceso.istae.edu.ec"):
         "id": str(uid),
         "estado": "EXITO",
         "fecha_dispositivo": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "token": "istae1805A" # Debe coincidir con config.py
+        "token": config.TOKEN_NODE
     }
     
     try:

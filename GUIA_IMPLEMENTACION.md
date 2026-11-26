@@ -46,14 +46,19 @@ Siga estos pasos si está instalando el sistema por primera vez en un servidor.
 
 ### Paso 4: Configuración de la Aplicación Flask
 
-1.  En el servidor, cree una copia del archivo de configuración de ejemplo.
-    ```bash
-    cp config.py.example config.py
+1.  `config.py` no contiene secretos: los lee del archivo **`instance/.env`**. Créelo con este contenido:
+    ```ini
+    SECRET_KEY=<cadena aleatoria larga>
+    DB_USER=<usuario MySQL>
+    DB_PASS=<contraseña MySQL>
+    DB_HOST=localhost
+    DB_NAME=<base de datos>
+    TOKEN_NODE=<token aleatorio, el mismo que en nodered5.ino>
+    EXIGIR_TOKEN_HARDWARE=true
+    ADMIN_INITIAL_PASSWORD=<contraseña del primer admin>
     ```
-2.  **Edite el archivo `config.py`** y rellene los siguientes campos:
-    *   `SECRET_KEY`: Genere una cadena aleatoria y segura.
-    *   `SQLALCHEMY_DATABASE_URI`: Use el formato `mysql+pymysql://<usuario>:<contraseña>@<host_de_cpanel>/<base_de_datos>`.
-    *   `TOKEN_NODE`: Genere otro token aleatorio para la comunicación segura con el hardware.
+    Proteja el archivo con `chmod 600 instance/.env`. La carpeta `instance/` está en `.gitignore`: **nunca** suba este archivo a git. Las mismas claves pueden definirse como variables de entorno (tienen prioridad sobre el archivo).
+2.  Antes de flashear `nodered5.ino`, reemplace `CAMBIAR_TOKEN_NODE` por el valor de `TOKEN_NODE` y `CAMBIAR_PASS_HIKVISION` por la contraseña del biométrico. No suba el firmware con esos valores a git.
 
 ### Paso 5: Inicialización y Ejecución
 
@@ -61,7 +66,7 @@ Siga estos pasos si está instalando el sistema por primera vez en un servidor.
     ```bash
     flask run --host=0.0.0.0 --port=5000
     ```
-2.  **Verifique la creación**: Acceda a la aplicación en su navegador (`http://<IP_DEL_SERVIDOR>:5000`). Inicie sesión con las credenciales por defecto (`admin` / `istae123A*`). Si no hay errores, la instalación fue exitosa.
+2.  **Verifique la creación**: Acceda a la aplicación en su navegador (`http://<IP_DEL_SERVIDOR>:5000`). Inicie sesión como `admin` con la contraseña definida en `ADMIN_INITIAL_PASSWORD` (en `instance/.env`); si no se definió, la contraseña generada se imprime en el log del primer arranque. Si no hay errores, la instalación fue exitosa.
 
 ---
 

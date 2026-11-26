@@ -73,6 +73,7 @@
 
             <!-- Formulario -->
             <form method="POST" action="{{ url_for('config_asistencia_remota') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="card border-0 shadow-sm mb-4">
                     <div class="card-header bg-white py-3 border-bottom">
                         <h6 class="mb-0 fw-bold"><i class="bi bi-gear-fill me-2 text-primary"></i>Configuración</h6>

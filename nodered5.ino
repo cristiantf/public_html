@@ -24,12 +24,12 @@
 // CONFIGURACIÓN — Modificar según el entorno de despliegue
 // ============================================================================
 const char* HOST_URL   = "https://acceso.istae.edu.ec";
-const char* TOKEN_NODE = "istae1805A";
+const char* TOKEN_NODE = "CAMBIAR_TOKEN_NODE";   // = TOKEN_NODE de instance/.env del servidor
 
 const char* ip_bio   = "192.168.1.22";   // IP fija del biométrico Hikvision
 const int   port_bio = 80;
 const char* user_bio = "admin";
-const char* pass_bio = "istae1804A";
+const char* pass_bio = "CAMBIAR_PASS_HIKVISION"; // = HIKVISION_PASS de instance/.env (no subir a git)
 
 // ============================================================================
 // PINES DE HARDWARE

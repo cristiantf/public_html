@@ -40,7 +40,7 @@ El sistema provee endpoints específicos, y cada vez que el NodeMCU los toca, el
     "id": "1",
     "estado": "EXITO",
     "fecha_dispositivo": "2026-06-29T14:43:19",
-    "token": "istae1805A",
+    "token": "<TOKEN_NODE>",
     "origen": "Huella"
   }
   ```

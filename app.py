@@ -1,12 +1,14 @@
 import os
 import io
 import uuid
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file, send_from_directory
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file, send_from_directory, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
-from datetime import datetime, timedelta, time
+from datetime import datetime, timedelta
+import time
+import secrets
 import pytz
 from openpyxl import Workbook
 from openpyxl.styles import PatternFill, Alignment, Border, Side, Font
@@ -78,7 +80,7 @@ class Permiso(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=False)
     fecha_permiso = db.Column(db.Date, nullable=False)
     observacion = db.Column(db.Text, nullable=True)
-    docente = db.relationship('User', backref=db.backref('permisos', lazy=True))
+    docente = db.relationship('User', backref=db.backref('permisos', lazy=True, cascade='all, delete-orphan'))
 
 class ConfigSistema(db.Model):
     """Configuración global del sistema (tabla singleton, una sola fila)."""
@@ -90,6 +92,29 @@ class ConfigSistema(db.Model):
     ar_fecha_fin = db.Column(db.Date, nullable=True)
     ar_hora_inicio = db.Column(db.Time, nullable=True)
     ar_hora_fin = db.Column(db.Time, nullable=True)
+
+# --- PROTECCIÓN CSRF ---
+# Rutas que no usan sesión de navegador (las llama el NodeMCU con su token)
+CSRF_EXENTAS = {'api_recibir_log'}
+
+def csrf_token():
+    if '_csrf_token' not in session:
+        session['_csrf_token'] = secrets.token_urlsafe(32)
+    return session['_csrf_token']
+
+app.jinja_env.globals['csrf_token'] = csrf_token
+
+@app.before_request
+def verificar_csrf():
+    if request.method != 'POST' or request.endpoint in CSRF_EXENTAS:
+        return
+    enviado = request.form.get('csrf_token') or request.headers.get('X-CSRFToken')
+    esperado = session.get('_csrf_token')
+    if not enviado or not esperado or not secrets.compare_digest(enviado, esperado):
+        if request.is_json or request.headers.get('X-CSRFToken') is not None:
+            return jsonify({"status": "error", "message": "Token CSRF inválido. Recargue la página."}), 400
+        flash('La sesión del formulario expiró. Intente de nuevo.', 'warning')
+        return redirect(request.referrer or url_for('index'))
 
 # --- INICIALIZACIÓN ---
 @login_manager.user_loader
@@ -113,7 +138,12 @@ def init_db():
             os.makedirs(app.config['UPLOAD_FOLDER'])
         
         if not User.query.filter_by(username='admin').first():
-            hashed_pw = generate_password_hash('istae123A*', method='pbkdf2:sha256')
+            password_inicial = config.ADMIN_INITIAL_PASSWORD
+            if not password_inicial:
+                import secrets
+                password_inicial = secrets.token_urlsafe(12)
+                print(f"[init_db] Usuario admin creado. Contraseña generada: {password_inicial} (cámbiela al ingresar)")
+            hashed_pw = generate_password_hash(password_inicial, method='pbkdf2:sha256')
             admin = User(
                 biometric_id='999', 
                 nombre='Admin Principal', 
@@ -126,6 +156,24 @@ def init_db():
             db.session.commit()
 
 init_db()
+
+# --- HELPERS GENERALES ---
+def ahora_ecuador():
+    """Fecha y hora actual de Ecuador, sin tzinfo (así se guarda en MySQL)."""
+    return datetime.now(pytz.timezone('America/Guayaquil')).replace(tzinfo=None)
+
+def parse_fecha(valor, formato='%Y-%m-%d'):
+    """Convierte texto a datetime; devuelve None si viene vacío o con formato inválido."""
+    if not valor:
+        return None
+    try:
+        return datetime.strptime(valor, formato)
+    except (ValueError, TypeError):
+        return None
+
+def filtro_asistencia():
+    """Eventos que cuentan como marcación de asistencia (excluye aperturas remotas)."""
+    return Log.tipo_evento.like('%Asistencia%')
 
 # --- HELPER: VALIDACIÓN DE DESCRIPTOR FACIAL ---
 FACE_DESCRIPTOR_LEN = 128
@@ -163,8 +211,6 @@ def asistencia_remota_permitida():
     return True
 
 # --- TRACK HARDWARE STATUS ---
-import time
-import os
 
 def update_hardware_seen():
     try:
@@ -284,7 +330,7 @@ def admin_dashboard():
     tz_ecu = pytz.timezone('America/Guayaquil')
     hoy_inicio = datetime.now(tz_ecu).replace(hour=0, minute=0, second=0, microsecond=0)
     hoy_fin = hoy_inicio.replace(hour=23, minute=59, second=59)
-    marcaciones_hoy = Log.query.filter(Log.fecha >= hoy_inicio.replace(tzinfo=None), Log.fecha <= hoy_fin.replace(tzinfo=None)).count()
+    marcaciones_hoy = Log.query.filter(Log.fecha >= hoy_inicio.replace(tzinfo=None), Log.fecha <= hoy_fin.replace(tzinfo=None), filtro_asistencia()).count()
     
     hardware_online = get_hardware_status()
     
@@ -313,6 +359,9 @@ def registrar_rostro():
     if not data or 'descriptor' not in data:
         return jsonify({"status": "error", "message": "Datos no recibidos"}), 400
         
+    if current_user.face_descriptor and current_user.rol != 'admin':
+        return jsonify({"status": "error", "message": "Ya tienes un rostro registrado. Pide al administrador que lo restablezca."}), 403
+
     descriptor = data['descriptor']
     if isinstance(descriptor, dict):
         descriptor = list(descriptor.values())
@@ -355,7 +404,7 @@ def uploaded_file(filename):
     )
 
 # --- ACCIONES ---
-@app.route('/admin/abrir')
+@app.route('/admin/abrir', methods=['POST'])
 @login_required
 def admin_abrir():
     if current_user.rol != 'admin':
@@ -433,18 +482,18 @@ def config_asistencia_remota():
         cfg.requiere_face_id = 'requiere_face_id' in request.form
         fi = request.form.get('fecha_inicio')
         ff = request.form.get('fecha_fin')
-        cfg.ar_fecha_inicio = datetime.strptime(fi, '%Y-%m-%d').date() if fi else None
-        cfg.ar_fecha_fin = datetime.strptime(ff, '%Y-%m-%d').date() if ff else None
+        cfg.ar_fecha_inicio = parse_fecha(fi).date() if parse_fecha(fi) else None
+        cfg.ar_fecha_fin = parse_fecha(ff).date() if parse_fecha(ff) else None
         hi = request.form.get('hora_inicio')
         hf = request.form.get('hora_fin')
-        cfg.ar_hora_inicio = datetime.strptime(hi, '%H:%M').time() if hi else None
-        cfg.ar_hora_fin = datetime.strptime(hf, '%H:%M').time() if hf else None
+        cfg.ar_hora_inicio = parse_fecha(hi, '%H:%M').time() if parse_fecha(hi, '%H:%M') else None
+        cfg.ar_hora_fin = parse_fecha(hf, '%H:%M').time() if parse_fecha(hf, '%H:%M') else None
         db.session.commit()
         flash('Configuración de asistencia remota actualizada.', 'success')
         return redirect(url_for('admin_dashboard'))
     return render_template('config_asistencia_remota.html', cfg=cfg)
 
-@app.route('/docente/abrir_puerta')
+@app.route('/docente/abrir_puerta', methods=['POST'])
 @login_required
 def docente_abrir():
     if current_user.acceso_puerta == 1:
@@ -502,7 +551,11 @@ def docente_marcar():
         foto = request.files.get('foto')
 
         # Validación básica de GPS
-        if not lat or not lon:
+        try:
+            lat, lon = float(lat), float(lon)
+            if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+                raise ValueError
+        except (TypeError, ValueError):
             flash('No se pudo obtener la ubicación GPS. Intente de nuevo.', 'danger')
             return redirect(url_for('docente_dashboard'))
 
@@ -521,8 +574,8 @@ def docente_marcar():
             usuario_id=current_user.biometric_id,
             tipo_evento="Asistencia",
             origen="Asistencia remota",
-            latitud=float(lat),
-            longitud=float(lon),
+            latitud=lat,
+            longitud=lon,
             descripcion=descripcion,
             foto_path=filename
         )
@@ -548,12 +601,12 @@ def gestion_asistencia():
 
     query = db.session.query(Log, User).outerjoin(User, Log.usuario_id == User.biometric_id).order_by(Log.fecha.desc())
 
-    if fecha_ini_str:
-        start_dt = datetime.strptime(fecha_ini_str, '%Y-%m-%d')
+    start_dt = parse_fecha(fecha_ini_str)
+    end_dt = parse_fecha(fecha_fin_str)
+    if start_dt:
         query = query.filter(Log.fecha >= start_dt)
-    if fecha_fin_str:
-        end_dt = datetime.strptime(fecha_fin_str, '%Y-%m-%d')
-        query = query.filter(Log.fecha <= end_dt + timedelta(days=1))
+    if end_dt:
+        query = query.filter(Log.fecha < end_dt + timedelta(days=1))
     if docente_id_filtro and docente_id_filtro != 'todos':
         user_filter = db.session.get(User, docente_id_filtro)
         if user_filter:
@@ -602,7 +655,11 @@ def actualizar_asistencia():
         flash('El registro no existe.', 'danger')
         return redirect(url_for('gestion_asistencia'))
 
-    log.fecha = datetime.strptime(request.form['fecha'], '%Y-%m-%dT%H:%M')
+    nueva_fecha = parse_fecha(request.form.get('fecha'), '%Y-%m-%dT%H:%M')
+    if not nueva_fecha:
+        flash('Fecha y hora inválidas.', 'danger')
+        return redirect(url_for('editar_asistencia', id=log.id))
+    log.fecha = nueva_fecha
     user = db.session.get(User, request.form['docente_id'])
     if user:
         log.usuario_id = user.biometric_id
@@ -615,7 +672,7 @@ def actualizar_asistencia():
     flash('Registro de asistencia actualizado correctamente.', 'success')
     return redirect(url_for('gestion_asistencia'))
 
-@app.route('/admin/asistencia/eliminar/<int:id>')
+@app.route('/admin/asistencia/eliminar/<int:id>', methods=['POST'])
 @login_required
 def eliminar_asistencia(id):
     if current_user.rol != 'admin': 
@@ -652,12 +709,12 @@ def gestion_permisos():
 
     query = Permiso.query.join(User).order_by(Permiso.fecha_permiso.desc())
 
-    if fecha_ini_str:
-        start_dt = datetime.strptime(fecha_ini_str, '%Y-%m-%d').date()
-        query = query.filter(Permiso.fecha_permiso >= start_dt)
-    if fecha_fin_str:
-        end_dt = datetime.strptime(fecha_fin_str, '%Y-%m-%d').date()
-        query = query.filter(Permiso.fecha_permiso <= end_dt)
+    start_dt = parse_fecha(fecha_ini_str)
+    end_dt = parse_fecha(fecha_fin_str)
+    if start_dt:
+        query = query.filter(Permiso.fecha_permiso >= start_dt.date())
+    if end_dt:
+        query = query.filter(Permiso.fecha_permiso <= end_dt.date())
     if docente_id_filtro and docente_id_filtro != 'todos':
         query = query.filter(Permiso.user_id == docente_id_filtro)
 
@@ -683,6 +740,9 @@ def nuevo_docente():
         return redirect(url_for('index'))
     
     if request.method == 'POST':
+        if User.query.filter((User.username == request.form['username']) | (User.biometric_id == request.form['bio_id'])).first():
+            flash('Ya existe un usuario con ese nombre de usuario o ID biométrico.', 'danger')
+            return render_template('nuevo_docente.html')
         hashed = generate_password_hash(request.form['password'], method='pbkdf2:sha256')
         db.session.add(User(
             biometric_id=request.form['bio_id'],
@@ -706,6 +766,13 @@ def actualizar_docente():
     if not u:
         flash('El docente no existe.', 'danger')
         return redirect(url_for('admin_dashboard'))
+    duplicado = User.query.filter(
+        User.id != u.id,
+        (User.username == request.form['username']) | (User.biometric_id == request.form['bio_id'])
+    ).first()
+    if duplicado:
+        flash('Ya existe otro usuario con ese nombre de usuario o ID biométrico.', 'danger')
+        return redirect(url_for('editar_docente', id=u.id))
     u.nombre = request.form['nombre']
     u.biometric_id = request.form['bio_id']
     u.username = request.form['username']
@@ -715,7 +782,7 @@ def actualizar_docente():
     db.session.commit()
     return redirect(url_for('admin_dashboard'))
 
-@app.route('/eliminar_docente/<int:id>')
+@app.route('/eliminar_docente/<int:id>', methods=['POST'])
 @login_required
 def eliminar_docente(id):
     if current_user.rol != 'admin':
@@ -737,6 +804,18 @@ def editar_docente(id):
         return redirect(url_for('admin_dashboard'))
     return render_template('editar_docente.html', docente=u)
     
+@app.route('/admin/docente/<int:id>/restablecer_rostro', methods=['POST'])
+@login_required
+def restablecer_rostro(id):
+    if current_user.rol != 'admin':
+        return redirect(url_for('index'))
+    u = db.session.get(User, id)
+    if u:
+        u.face_descriptor = None
+        db.session.commit()
+        flash(f'Rostro de {u.nombre} restablecido. Deberá registrarlo de nuevo desde su perfil.', 'success')
+    return redirect(url_for('editar_docente', id=id))
+
 # --- GESTIÓN DE PERMISOS ---
 @app.route('/admin/nuevo_permiso', methods=['GET', 'POST'])
 @login_required
@@ -808,15 +887,19 @@ def actualizar_permiso():
         flash('El docente y la fecha son obligatorios.', 'danger')
         return redirect(url_for('editar_permiso', id=permiso_id))
 
+    fecha_obj = parse_fecha(fecha_str)
+    if not fecha_obj:
+        flash('Formato de fecha inválido.', 'danger')
+        return redirect(url_for('editar_permiso', id=permiso_id))
     permiso.user_id = docente_id
-    permiso.fecha_permiso = datetime.strptime(fecha_str, '%Y-%m-%d').date()
+    permiso.fecha_permiso = fecha_obj.date()
     permiso.observacion = observacion
     
     db.session.commit()
     flash('Permiso actualizado correctamente.', 'success')
     return redirect(url_for('gestion_permisos'))
 
-@app.route('/admin/permiso/eliminar/<int:id>')
+@app.route('/admin/permiso/eliminar/<int:id>', methods=['POST'])
 @login_required
 def eliminar_permiso(id):
     if current_user.rol != 'admin':
@@ -845,12 +928,12 @@ def descargar_reporte_permisos():
 
     query = Permiso.query.join(User).order_by(Permiso.fecha_permiso.desc())
 
-    if fecha_ini_str:
-        start_dt = datetime.strptime(fecha_ini_str, '%Y-%m-%d').date()
-        query = query.filter(Permiso.fecha_permiso >= start_dt)
-    if fecha_fin_str:
-        end_dt = datetime.strptime(fecha_fin_str, '%Y-%m-%d').date()
-        query = query.filter(Permiso.fecha_permiso <= end_dt)
+    start_dt = parse_fecha(fecha_ini_str)
+    end_dt = parse_fecha(fecha_fin_str)
+    if start_dt:
+        query = query.filter(Permiso.fecha_permiso >= start_dt.date())
+    if end_dt:
+        query = query.filter(Permiso.fecha_permiso <= end_dt.date())
     if docente_id_filtro and docente_id_filtro != 'todos':
         query = query.filter(Permiso.user_id == docente_id_filtro)
 
@@ -896,7 +979,7 @@ def descargar_reporte_permisos():
     
     return send_file(
         output,
-        download_name=f"Reporte_Permisos_ISTAE_{datetime.now().strftime('%Y%m%d')}.xlsx",
+        download_name=f"Reporte_Permisos_ISTAE_{ahora_ecuador().strftime('%Y%m%d')}.xlsx",
         as_attachment=True
     )
 
@@ -911,12 +994,16 @@ def descargar_reporte_matricial():
     fecha_fin_str = request.args.get('fecha_fin')
     docente_filtro = request.args.get('docente_id')
     
-    if fecha_ini_str and fecha_fin_str:
-        start_dt = datetime.strptime(fecha_ini_str, '%Y-%m-%d')
-        end_dt = datetime.strptime(fecha_fin_str, '%Y-%m-%d')
-    else:
-        end_dt = datetime.now()
+    start_dt = parse_fecha(fecha_ini_str)
+    end_dt = parse_fecha(fecha_fin_str)
+    if not start_dt or not end_dt:
+        end_dt = ahora_ecuador().replace(hour=0, minute=0, second=0, microsecond=0)
         start_dt = end_dt - timedelta(days=6)
+    if start_dt > end_dt:
+        start_dt, end_dt = end_dt, start_dt
+    if (end_dt - start_dt).days > 366:
+        flash('El rango del reporte no puede superar un año.', 'danger')
+        return redirect(url_for('reportes'))
 
     dias_reporte = [ (start_dt + timedelta(days=x)).strftime('%Y-%m-%d') for x in range((end_dt-start_dt).days + 1) ]
 
@@ -931,13 +1018,20 @@ def descargar_reporte_matricial():
         return redirect(url_for('admin_dashboard') + '#collapseReportes')
 
     # --- Consulta de Datos ---
-    docentes = User.query.filter_by(biometric_id=docente_filtro).all() if docente_filtro and docente_filtro != 'todos' else User.query.filter_by(rol='docente').all()
+    docentes = User.query.filter_by(biometric_id=docente_filtro, rol='docente').all() if docente_filtro and docente_filtro != 'todos' else User.query.filter_by(rol='docente').all()
 
     all_logs = Log.query.filter(
         Log.fecha >= start_dt,
-        Log.fecha <= end_dt + timedelta(days=1),
-        Log.tipo_evento.like('%Asistencia%')
+        Log.fecha < end_dt + timedelta(days=1),
+        filtro_asistencia()
     ).all()
+
+    # Permisos del rango, indexados por (user_id, 'YYYY-MM-DD')
+    permisos_rango = Permiso.query.filter(
+        Permiso.fecha_permiso >= start_dt.date(),
+        Permiso.fecha_permiso <= end_dt.date()
+    ).all()
+    permisos_idx = {(p.user_id, p.fecha_permiso.strftime('%Y-%m-%d')): p for p in permisos_rango}
 
     # --- Generación de Excel ---
     wb = Workbook()
@@ -990,6 +1084,10 @@ def descargar_reporte_matricial():
             if t_logs:
                 cell_parts.append(f"Tarde: {fmt(t_logs)}")
             
+            permiso = permisos_idx.get((doc.id, dia))
+            if permiso:
+                cell_parts.append(f"PERMISO: {permiso.observacion}" if permiso.observacion else "PERMISO")
+
             final_text = "\n".join(cell_parts) or "Sin registros"
 
             cell = ws.cell(row=row_idx, column=col_idx, value=final_text)
@@ -1039,7 +1137,7 @@ def get_logs_admin_json():
     tz_ecu = pytz.timezone('America/Guayaquil')
     hoy_inicio = datetime.now(tz_ecu).replace(hour=0, minute=0, second=0, microsecond=0)
     hoy_fin = hoy_inicio.replace(hour=23, minute=59, second=59)
-    marcaciones_hoy = Log.query.filter(Log.fecha >= hoy_inicio.replace(tzinfo=None), Log.fecha <= hoy_fin.replace(tzinfo=None)).count()
+    marcaciones_hoy = Log.query.filter(Log.fecha >= hoy_inicio.replace(tzinfo=None), Log.fecha <= hoy_fin.replace(tzinfo=None), filtro_asistencia()).count()
     hardware_online = get_hardware_status()
     
     return jsonify(

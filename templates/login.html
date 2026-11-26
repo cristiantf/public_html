@@ -117,6 +117,7 @@
 
                         <!-- Formulario -->
                         <form method="POST" action="{{ url_for('login') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <div class="mb-3">
                                 <label class="form-label small fw-bold text-secondary">Nombre de Usuario</label>
                                 <div class="input-group">

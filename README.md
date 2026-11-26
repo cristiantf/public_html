@@ -39,8 +39,8 @@ El firmware del NodeMCU se comunica con el biométrico Hikvision vía protocolo 
     ```
 
 2.  **Configurar la aplicación:**
-    - Edita el fichero `config.py` con credenciales de DB.
-    - Asegura que `TOKEN_NODE` coincide con el del ESP8266.
+    - Crea `instance/.env` con las credenciales (ver `GUIA_IMPLEMENTACION.md`, Paso 4). `config.py` no contiene secretos.
+    - Asegura que `TOKEN_NODE` coincide con el del ESP8266 (`nodered5.ino`).
 
 3.  **Ejecución:**
     Para producción, usar Gunicorn y reiniciar el demonio en systemd:
@@ -54,6 +54,8 @@ El firmware del NodeMCU se comunica con el biométrico Hikvision vía protocolo 
 - `POST /api/recibir_log`: Recibe logs presenciales. Acepta JSON con campos `id`, `estado` (`EXITO`/`DENEGADO`), `fecha_dispositivo` (ISO 8601), `token` y `origen`. Ambos estados se registran como asistencia válida en los reportes.
 - `GET /api/check_comando`: Comprueba si hay comandos remotos pendientes (`ABRIR`, `SET_TIME|<iso_time>`, `NADA`).
 *(Cualquiera de los tres endpoints actualiza el estado "Online" del Hardware).*
+
+`/api/sincronizar` y `/api/check_comando` exigen la cabecera `X-Token` cuando `EXIGIR_TOKEN_HARDWARE=true`. Los comandos que no se entregan en 60 s se marcan como `EXPIRADO`.
 
 ## Modelos de la Base de Datos
 

@@ -12,3 +12,13 @@ __pycache__/
 Thumbs.db
 
 last_seen.txt
+
+# Configuración privada y secretos (instance/.env)
+instance/
+*.db
+
+# Evidencias subidas por los docentes (datos personales)
+uploads/
+
+# Copias de respaldo
+app_resp.py

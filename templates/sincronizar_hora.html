@@ -46,6 +46,7 @@
         </div>
         <div class="card-body p-4 bg-white">
             <form action="{{ url_for('admin_sincronizar_hora') }}" method="POST">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <p class="small text-muted mb-4">Use esta herramienta para forzar la fecha y hora del dispositivo biométrico. Se recomienda usar la hora actual del servidor para mantener la consistencia.</p>
                 <div class="row g-3 align-items-end">
                     <div class="col-md-8">
