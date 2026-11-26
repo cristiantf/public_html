@@ -102,6 +102,19 @@ def init_db():
 
 init_db()
 
+# --- HELPER: VALIDACIÓN DE DESCRIPTOR FACIAL ---
+FACE_DESCRIPTOR_LEN = 128
+
+def descriptor_valido(desc):
+    """Un descriptor de face-api.js válido es una lista de 128 números finitos."""
+    import math
+    if not isinstance(desc, list) or len(desc) != FACE_DESCRIPTOR_LEN:
+        return False
+    return all(
+        isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+        for v in desc
+    )
+
 # --- HELPER: ASISTENCIA REMOTA ---
 def asistencia_remota_permitida():
     """Verifica si la asistencia remota está habilitada según la config del admin."""
@@ -250,12 +263,20 @@ def perfil():
 @app.route('/docente/registrar_rostro', methods=['POST'])
 @login_required
 def registrar_rostro():
-    descriptor = request.json.get('descriptor')
-    if descriptor:
-        current_user.face_descriptor = json.dumps(descriptor)
-        db.session.commit()
-        return jsonify({"status": "success"})
-    return jsonify({"status": "error"}), 400
+    data = request.get_json()
+    if not data or 'descriptor' not in data:
+        return jsonify({"status": "error", "message": "Datos no recibidos"}), 400
+        
+    descriptor = data['descriptor']
+    if isinstance(descriptor, dict):
+        descriptor = list(descriptor.values())
+        
+    if not descriptor_valido(descriptor):
+        return jsonify({"status": "error", "message": "Descriptor facial inválido"}), 400
+
+    current_user.face_descriptor = json.dumps(descriptor)
+    db.session.commit()
+    return jsonify({"status": "success"})
 
 # --- RUTA PARA SERVIR EVIDENCIAS ---
 @app.route('/uploads/<filename>')
@@ -267,6 +288,8 @@ def uploaded_file(filename):
 @app.route('/admin/abrir')
 @login_required
 def admin_abrir():
+    if current_user.rol != 'admin':
+        return redirect(url_for('index'))
     db.session.add(Comando(instruccion='ABRIR'))
     db.session.add(Log(
         fecha=datetime.now(pytz.timezone('America/Guayaquil')).replace(tzinfo=None),
@@ -382,7 +405,13 @@ def docente_marcar():
                 import math
                 live_desc = json.loads(live_face_str)
                 saved_desc = json.loads(current_user.face_descriptor)
-                
+
+                # Ambos descriptores deben tener 128 valores; si no, zip() truncaría
+                # la comparación y un descriptor vacío daría distancia 0.
+                if not descriptor_valido(live_desc) or not descriptor_valido(saved_desc):
+                    flash('Validación facial requerida y no superada.', 'danger')
+                    return redirect(url_for('docente_dashboard'))
+
                 # Distancia Euclidiana
                 distance = math.sqrt(sum((a - b) ** 2 for a, b in zip(live_desc, saved_desc)))
                 
@@ -594,7 +623,12 @@ def nuevo_docente():
 @app.route('/actualizar_docente', methods=['POST'])
 @login_required
 def actualizar_docente():
-    u = db.session.get(User, request.form.get('user_id'))
+    if current_user.rol != 'admin':
+        return redirect(url_for('index'))
+    u = db.session.get(User, request.form.get('user_id', type=int))
+    if not u:
+        flash('El docente no existe.', 'danger')
+        return redirect(url_for('admin_dashboard'))
     u.nombre = request.form['nombre']
     u.biometric_id = request.form['bio_id']
     u.username = request.form['username']
@@ -607,6 +641,8 @@ def actualizar_docente():
 @app.route('/eliminar_docente/<int:id>')
 @login_required
 def eliminar_docente(id):
+    if current_user.rol != 'admin':
+        return redirect(url_for('index'))
     u = db.session.get(User, id)
     if u and u.username != 'admin':
         db.session.delete(u)
@@ -616,7 +652,12 @@ def eliminar_docente(id):
 @app.route('/editar_docente/<int:id>')
 @login_required
 def editar_docente(id):
+    if current_user.rol != 'admin':
+        return redirect(url_for('index'))
     u = db.session.get(User, id)
+    if not u:
+        flash('El docente no existe.', 'danger')
+        return redirect(url_for('admin_dashboard'))
     return render_template('editar_docente.html', docente=u)
     
 # --- GESTIÓN DE PERMISOS ---
@@ -933,9 +974,12 @@ def get_logs_admin_json():
 @app.route('/toggle_permiso/<int:id>', methods=['POST'])
 @login_required
 def toggle_permiso(id):
+    if current_user.rol != 'admin':
+        return jsonify({"success": False, "error": "No autorizado"}), 403
     u = db.session.get(User, id)
     if u:
-        u.acceso_puerta = 1 if request.json.get('estado') else 0
+        data = request.get_json(silent=True) or {}
+        u.acceso_puerta = 1 if data.get('estado') else 0
         db.session.commit()
         return jsonify({"success": True})
     return jsonify({"success": False}), 404
