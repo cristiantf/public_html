@@ -57,3 +57,8 @@ EXIGIR_TOKEN_HARDWARE = os.environ.get('EXIGIR_TOKEN_HARDWARE', 'false').lower()
 
 # Contraseña del admin inicial (solo si no existe el usuario admin)
 ADMIN_INITIAL_PASSWORD = os.environ.get('ADMIN_INITIAL_PASSWORD', '')
+
+# --- Documentos legales (Términos, Política de Uso, Protección de Datos) ---
+# Nombre del responsable del tratamiento y canal para ejercer derechos (LOPDP).
+LEGAL_INSTITUCION = os.environ.get('LEGAL_INSTITUCION', 'Instituto Superior Tecnológico Alberto Enríquez')
+LEGAL_CONTACTO = os.environ.get('LEGAL_CONTACTO', '')

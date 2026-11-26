@@ -14,6 +14,7 @@ from openpyxl import Workbook
 from openpyxl.styles import PatternFill, Alignment, Border, Side, Font
 import config
 import json
+import hashlib
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = config.SECRET_KEY
@@ -93,6 +94,25 @@ class ConfigSistema(db.Model):
     ar_hora_inicio = db.Column(db.Time, nullable=True)
     ar_hora_fin = db.Column(db.Time, nullable=True)
 
+class AceptacionLegal(db.Model):
+    """Constancia de aceptación de un documento legal (una fila por documento y versión).
+
+    Guarda una copia de los datos del usuario (y no una clave foránea) para que la
+    constancia se conserve aunque el usuario sea eliminado.
+    """
+    __tablename__ = 'aceptaciones_legales'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, nullable=False, index=True)
+    username = db.Column(db.String(50))
+    nombre = db.Column(db.String(100))
+    biometric_id = db.Column(db.String(20))
+    documento = db.Column(db.String(40), nullable=False)
+    version = db.Column(db.String(20), nullable=False)
+    hash_documento = db.Column(db.String(64), nullable=False)   # SHA-256 del texto aceptado
+    fecha = db.Column(db.DateTime, nullable=False)              # hora de Ecuador
+    ip = db.Column(db.String(45))
+    user_agent = db.Column(db.String(255))
+
 # --- PROTECCIÓN CSRF ---
 # Rutas que no usan sesión de navegador (las llama el NodeMCU con su token)
 CSRF_EXENTAS = {'api_recibir_log'}
@@ -115,6 +135,21 @@ def verificar_csrf():
             return jsonify({"status": "error", "message": "Token CSRF inválido. Recargue la página."}), 400
         flash('La sesión del formulario expiró. Intente de nuevo.', 'warning')
         return redirect(request.referrer or url_for('index'))
+
+@app.before_request
+def exigir_aceptacion_legal():
+    """Hasta aceptar la versión vigente de los documentos, el usuario solo ve la página de aceptación."""
+    if not current_user.is_authenticated or request.endpoint in LEGAL_EXENTAS or request.endpoint is None:
+        return
+    marca = f'{current_user.id}:{LEGAL_VERSION}'
+    if session.get('legal_ok') == marca:
+        return
+    if acepto_version_vigente(current_user):
+        session['legal_ok'] = marca
+        return
+    if request.path.startswith('/api/') or request.is_json:
+        return jsonify({"status": "error", "message": "Debe aceptar los términos y condiciones."}), 403
+    return redirect(url_for('legal_aceptacion'))
 
 # --- INICIALIZACIÓN ---
 @login_manager.user_loader
@@ -174,6 +209,45 @@ def parse_fecha(valor, formato='%Y-%m-%d'):
 def filtro_asistencia():
     """Eventos que cuentan como marcación de asistencia (excluye aperturas remotas)."""
     return Log.tipo_evento.like('%Asistencia%')
+
+# --- DOCUMENTOS LEGALES (LOPDP Ecuador) ---
+# Al cambiar el texto de un documento, suba LEGAL_VERSION: todos los usuarios
+# deberán aceptar la nueva versión en su siguiente ingreso.
+LEGAL_VERSION = '1.0'
+LEGAL_FECHA_VIGENCIA = '26/11/2026'
+DOCUMENTOS_LEGALES = {
+    'terminos': 'Términos y Condiciones de Uso',
+    'politica_uso': 'Política de Uso Aceptable',
+    'datos_personales': 'Convenio de Consentimiento y Protección de Datos Personales',
+}
+LEGAL_EXENTAS = {'static', 'login', 'logout', 'legal_aceptacion', 'legal_documento'}
+
+def contexto_legal():
+    return {
+        'institucion': getattr(config, 'LEGAL_INSTITUCION', '') or 'Instituto Superior Tecnológico Alberto Enríquez',
+        'contacto': getattr(config, 'LEGAL_CONTACTO', '') or 'la Secretaría General del Instituto',
+        'dominio': request.host if request else 'acceso.istae.edu.ec',
+        'version': LEGAL_VERSION,
+        'vigencia': LEGAL_FECHA_VIGENCIA,
+    }
+
+def texto_documento(doc):
+    """HTML del documento tal como lo ve el usuario (se usa para mostrarlo y para su hash)."""
+    return render_template(f'legal/{doc}.html', **contexto_legal())
+
+def hash_documento(doc):
+    return hashlib.sha256(texto_documento(doc).encode('utf-8')).hexdigest()
+
+def acepto_version_vigente(user):
+    aceptados = {a.documento for a in AceptacionLegal.query.filter_by(user_id=user.id, version=LEGAL_VERSION).all()}
+    return set(DOCUMENTOS_LEGALES) <= aceptados
+
+def ip_cliente():
+    """IP real del usuario: detrás de Nginx, remote_addr es 127.0.0.1."""
+    ip = request.remote_addr or ''
+    if ip in ('127.0.0.1', '::1'):
+        ip = request.headers.get('X-Real-IP') or request.headers.get('X-Forwarded-For', '').split(',')[0].strip() or ip
+    return ip[:45]
 
 # --- HELPER: VALIDACIÓN DE DESCRIPTOR FACIAL ---
 FACE_DESCRIPTOR_LEN = 128
@@ -350,7 +424,8 @@ def docente_dashboard():
 @app.route('/perfil')
 @login_required
 def perfil():
-    return render_template('perfil.html')
+    aceptaciones = AceptacionLegal.query.filter_by(user_id=current_user.id, version=LEGAL_VERSION).all()
+    return render_template('perfil.html', aceptaciones=aceptaciones, documentos_legales=DOCUMENTOS_LEGALES, legal_version=LEGAL_VERSION)
 
 @app.route('/docente/registrar_rostro', methods=['POST'])
 @login_required
@@ -1172,11 +1247,80 @@ def actualizar_password():
     flash('Contraseña actual incorrecta.', 'danger')
     return redirect(url_for('perfil'))
 
+# --- TÉRMINOS, POLÍTICAS Y PROTECCIÓN DE DATOS ---
+@app.route('/legal/<doc>')
+def legal_documento(doc):
+    """Documento legal en modo lectura (público, para leerlo antes de ingresar)."""
+    if doc not in DOCUMENTOS_LEGALES:
+        return redirect(url_for('login'))
+    return render_template('legal_documento.html', doc=doc, titulo=DOCUMENTOS_LEGALES[doc],
+                           contenido=texto_documento(doc), **contexto_legal())
+
+@app.route('/legal/aceptacion', methods=['GET', 'POST'])
+@login_required
+def legal_aceptacion():
+    if request.method == 'POST':
+        if request.form.get('decision') == 'rechazar':
+            logout_user()
+            session.clear()
+            flash('No aceptó los términos. Sin esa aceptación no es posible usar el sistema web; '
+                  'puede seguir registrando su asistencia presencial. Para dudas, comuníquese con la Secretaría.', 'warning')
+            return redirect(url_for('login'))
+        faltan = [d for d in DOCUMENTOS_LEGALES if request.form.get(f'acepto_{d}') != 'si']
+        if faltan:
+            flash('Debe marcar la aceptación de los tres documentos para continuar.', 'danger')
+            return redirect(url_for('legal_aceptacion'))
+        ahora = ahora_ecuador()
+        ya = {a.documento for a in AceptacionLegal.query.filter_by(user_id=current_user.id, version=LEGAL_VERSION).all()}
+        for doc in DOCUMENTOS_LEGALES:
+            if doc in ya:
+                continue
+            db.session.add(AceptacionLegal(
+                user_id=current_user.id, username=current_user.username, nombre=current_user.nombre,
+                biometric_id=current_user.biometric_id, documento=doc, version=LEGAL_VERSION,
+                hash_documento=hash_documento(doc), fecha=ahora, ip=ip_cliente(),
+                user_agent=(request.headers.get('User-Agent') or '')[:255]
+            ))
+        db.session.commit()
+        session['legal_ok'] = f'{current_user.id}:{LEGAL_VERSION}'
+        flash('Gracias. Su aceptación quedó registrada.', 'success')
+        return redirect(url_for('index'))
+
+    documentos = [(d, t, texto_documento(d)) for d, t in DOCUMENTOS_LEGALES.items()]
+    return render_template('legal_aceptacion.html', documentos=documentos, **contexto_legal())
+
+@app.route('/admin/aceptaciones')
+@login_required
+def admin_aceptaciones():
+    if current_user.rol != 'admin':
+        return redirect(url_for('index'))
+    page = request.args.get('page', 1, type=int)
+    pendientes_solo = request.args.get('estado') == 'pendientes'
+    usuarios = User.query.order_by(User.nombre).all()
+    registros = AceptacionLegal.query.filter_by(version=LEGAL_VERSION).all()
+    por_usuario = {}
+    for r in registros:
+        por_usuario.setdefault(r.user_id, []).append(r)
+    resumen = []
+    for u in usuarios:
+        docs = {r.documento: r for r in por_usuario.get(u.id, [])}
+        completo = set(DOCUMENTOS_LEGALES) <= set(docs)
+        if pendientes_solo and completo:
+            continue
+        fecha = max((r.fecha for r in docs.values()), default=None)
+        ip = next(iter(docs.values())).ip if docs else None
+        resumen.append({'user': u, 'completo': completo, 'fecha': fecha, 'ip': ip})
+    historial = AceptacionLegal.query.order_by(AceptacionLegal.fecha.desc()).paginate(page=page, per_page=30, error_out=False)
+    return render_template('admin_aceptaciones.html', resumen=resumen, historial=historial,
+                           documentos=DOCUMENTOS_LEGALES, pendientes_solo=pendientes_solo,
+                           total_ok=sum(1 for r in resumen if r['completo']), **contexto_legal())
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
         u = User.query.filter_by(username=request.form['username']).first()
         if u and check_password_hash(u.password, request.form['password']):
+            session.pop('legal_ok', None)
             login_user(u)
             return redirect(url_for('index'))
         flash('Credenciales incorrectas.', 'danger')
@@ -1185,6 +1329,7 @@ def login():
 @app.route('/logout')
 def logout():
     logout_user()
+    session.pop('legal_ok', None)
     return redirect(url_for('login'))
 
 if __name__ == '__main__':

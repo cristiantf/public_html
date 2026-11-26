@@ -248,8 +248,49 @@ body {
     width: 100%;
     height: 100%;
     object-fit: cover;
-    transform: scaleX(-1);            /* vista espejo, como una selfie */
 }
+.face-camera.mirror video,
+.face-camera.mirror canvas { transform: scaleX(-1); }   /* espejo solo con la cámara frontal */
+.camera-switch {
+    position: absolute;
+    z-index: 5;
+    top: 10px;
+    right: 10px;
+    width: 46px; height: 46px;
+    display: grid; place-items: center;
+    border: 0;
+    border-radius: 50%;
+    background: rgba(15, 23, 42, .6);
+    color: #fff;
+    font-size: 1.3rem;
+    backdrop-filter: blur(4px);
+}
+.camera-switch:hover, .camera-switch:focus-visible { background: rgba(15, 23, 42, .85); }
+.camera-actions {
+    position: absolute;
+    z-index: 5;
+    left: 0; right: 0; bottom: 12px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 22px;
+}
+.btn-shutter {
+    width: 68px; height: 68px;
+    border-radius: 50%;
+    border: 5px solid rgba(255, 255, 255, .85);
+    background: #fff;
+    box-shadow: 0 0 0 3px rgba(0, 0, 0, .25);
+}
+.btn-shutter:active { transform: scale(.94); }
+.btn-round-dark {
+    width: 46px; height: 46px;
+    display: grid; place-items: center;
+    border: 0; border-radius: 50%;
+    background: rgba(15, 23, 42, .6);
+    color: #fff;
+}
+.evidence-preview img { max-height: 180px; border-radius: 12px; object-fit: cover; }
 .face-camera canvas { z-index: 2; pointer-events: none; }
 .face-camera .face-guide {
     position: absolute;

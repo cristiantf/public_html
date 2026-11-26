@@ -117,6 +117,9 @@
                         <video id="video-feed" autoplay muted playsinline></video>
                         <canvas id="video-canvas"></canvas>
                         <div class="face-guide"></div>
+                        <button type="button" class="camera-switch d-none" id="btnSwitchFace" onclick="switchFaceCamera()" title="Cambiar a cámara trasera" aria-label="Cambiar entre cámara frontal y trasera">
+                            <i class="bi bi-arrow-repeat"></i>
+                        </button>
                         <div id="face-loading" class="face-overlay">
                             <div class="spinner-border text-light mb-2" role="status"></div>
                             <span class="text-light small fw-bold" id="face-loading-text">Cargando IA...</span>
@@ -136,6 +139,28 @@
                 </div>
             </div>
 
+            <!-- Constancia de documentos legales -->
+            <div class="card shadow border-0 mt-4">
+                <div class="card-header bg-white py-3 fw-bold">
+                    <i class="bi bi-shield-check text-success me-2"></i>Términos y Protección de Datos
+                </div>
+                <div class="card-body p-3 p-sm-4">
+                    <ul class="list-unstyled mb-0">
+                        {% for doc, titulo in documentos_legales.items() %}
+                        {% set a = aceptaciones | selectattr('documento', 'equalto', doc) | first %}
+                        <li class="d-flex gap-2 align-items-start py-2 {% if not loop.last %}border-bottom{% endif %}">
+                            <i class="bi {{ 'bi-check-circle-fill text-success' if a else 'bi-circle text-muted' }} mt-1"></i>
+                            <div class="min-w-0">
+                                <a href="{{ url_for('legal_documento', doc=doc) }}" target="_blank" rel="noopener" class="fw-semibold text-decoration-none">{{ titulo }}</a>
+                                <div class="small text-muted">{% if a %}Aceptado el {{ a.fecha.strftime('%d/%m/%Y a las %H:%M') }} (versión {{ a.version }}){% else %}Pendiente{% endif %}</div>
+                            </div>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    <p class="small text-muted mt-3 mb-0">Para ejercer sus derechos de acceso, rectificación, eliminación, oposición, portabilidad o revocar su consentimiento, consulte el Convenio de Protección de Datos Personales.</p>
+                </div>
+            </div>
+
             <!-- Nota de seguridad -->
             <div class="alert alert-light border-0 text-center mt-4 p-3 shadow-sm">
                 <small class="text-muted">
@@ -146,7 +171,7 @@
     </div>
 </div>
 
-<script src="{{ url_for('static', filename='js/face-utils.js') }}?v=2"></script>
+<script src="{{ url_for('static', filename='js/face-utils.js') }}?v=3"></script>
 <script>
     /**
      * Validación de coincidencia de contraseñas en el cliente
@@ -194,6 +219,7 @@
     let stopDetection = null;
     let descriptorsList = [];
     let saving = false;
+    let facing = 'user';   // 'user' = frontal, 'environment' = trasera (otra persona sostiene el teléfono)
 
     function $(id) { return document.getElementById(id); }
 
@@ -256,11 +282,13 @@
             $('face-loading-text').innerText = 'Cargando modelos de IA...';
             await FaceUtils.loadModels();
             $('face-loading-text').innerText = 'Iniciando cámara...';
-            localStream = await FaceUtils.startCamera($('video-feed'), $('video-canvas'), $('video-container'));
+            localStream = await FaceUtils.startCamera($('video-feed'), $('video-canvas'), $('video-container'), facing);
         } catch (e) {
             return fail(e.message);
         }
         if (!localStream) return; // cancelado mientras cargaba
+        actualizarBotonCamara();
+        $('btnSwitchFace').classList.toggle('d-none', !(await FaceUtils.hasMultipleCameras()));
 
         $('face-loading').classList.add('d-none');
         setInstruction('Mira de frente a la cámara y mantente quieto.', 'info');
@@ -309,6 +337,30 @@
             fail((result.message || 'No se pudo guardar el rostro.') + ' Intenta de nuevo.');
         } catch (e) {
             fail('Error de conexión al guardar el rostro. Revisa tu internet e intenta de nuevo.');
+        }
+    }
+
+    function actualizarBotonCamara() {
+        const trasera = localStream && localStream.facing === 'environment';
+        $('btnSwitchFace').title = trasera ? 'Cambiar a cámara frontal' : 'Cambiar a cámara trasera';
+    }
+
+    async function switchFaceCamera() {
+        if (!localStream || saving) return;
+        const btn = $('btnSwitchFace');
+        btn.disabled = true;
+        facing = localStream.facing === 'environment' ? 'user' : 'environment';
+        FaceUtils.stopStream(localStream);
+        try {
+            localStream = await FaceUtils.startCamera($('video-feed'), $('video-canvas'), $('video-container'), facing);
+            actualizarBotonCamara();
+            setInstruction(facing === 'environment'
+                ? 'Cámara trasera: apunte al rostro del docente, que debe mirar al teléfono.'
+                : 'Mira de frente a la cámara y mantente quieto.', 'info');
+        } catch (e) {
+            return fail(e.message);
+        } finally {
+            btn.disabled = false;
         }
     }
 

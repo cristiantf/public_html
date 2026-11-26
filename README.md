@@ -12,6 +12,8 @@ Sistema web de control de acceso y asistencia docente del ISTAE. Integra un biom
 - **Asistencia remota configurable:** el admin la activa, desactiva o programa por rango de fechas y horas. Exige GPS, admite foto de evidencia y, opcionalmente, verificación facial (Face ID con face-api.js).
 - **Reportes Excel:** reporte matricial de asistencia (mañana/tarde, con permisos) y reporte de permisos.
 - **Sincronización horaria** del biométrico desde el panel.
+- **Términos, Política de Uso y Protección de Datos (LOPDP):** aceptación obligatoria y versionada, con constancia en la base de datos (fecha, IP, navegador y hash del texto) y vista de control para el administrador.
+- **Cámara frontal o trasera** en el registro de rostro, la verificación y la foto de evidencia.
 - **Seguridad:** protección CSRF, secretos fuera del código, token del hardware, validación de archivos subidos (ver [documentacion_tecnica.md](documentacion_tecnica.md#5-seguridad)).
 
 ## Pila tecnológica
@@ -57,6 +59,7 @@ Cualquiera de los tres actualiza el estado "en línea" del hardware. Los comando
 - **Comando** (`comandos`): cola de órdenes hacia el hardware, con fecha de creación para su caducidad.
 - **Permiso** (`permisos`): ausencias justificadas por docente y fecha.
 - **ConfigSistema** (`config_sistema`): configuración global (asistencia remota, Face ID).
+- **AceptacionLegal** (`aceptaciones_legales`): constancias de aceptación de los documentos legales.
 
 ## Documentación
 

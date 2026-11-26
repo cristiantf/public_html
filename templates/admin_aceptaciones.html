@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}Aceptaciones Legales{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-0 px-sm-2">
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2 mb-3">
+        <div>
+            <h4 class="fw-bold mb-1">Aceptaciones legales</h4>
+            <p class="text-muted small mb-0">Versión vigente {{ version }} (desde el {{ vigencia }}): Términos y Condiciones, Política de Uso y Protección de Datos Personales.</p>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            {% for d, t in documentos.items() %}
+            <a href="{{ url_for('legal_documento', doc=d) }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary">{{ t.split(' ')[0] }}{% if d == 'datos_personales' %} de Datos{% endif %}</a>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="row g-3 mb-3">
+        <div class="col-6 col-md-3">
+            <div class="card p-3 h-100"><div class="small text-muted">Usuarios</div><div class="fs-3 fw-bold">{{ resumen | length if not pendientes_solo else '—' }}</div></div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card p-3 h-100"><div class="small text-muted">Aceptaron v{{ version }}</div><div class="fs-3 fw-bold text-success">{{ total_ok }}</div></div>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header bg-white py-3 d-flex flex-wrap gap-2 justify-content-between align-items-center">
+            <h6 class="mb-0 fw-bold"><i class="bi bi-people me-2"></i>Estado por usuario</h6>
+            <div class="btn-group btn-group-sm" role="group" aria-label="Filtro">
+                <a href="{{ url_for('admin_aceptaciones') }}" class="btn {{ 'btn-primary' if not pendientes_solo else 'btn-outline-primary' }}">Todos</a>
+                <a href="{{ url_for('admin_aceptaciones', estado='pendientes') }}" class="btn {{ 'btn-primary' if pendientes_solo else 'btn-outline-primary' }}">Pendientes</a>
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light">
+                    <tr class="small text-muted text-uppercase">
+                        <th class="ps-3">Usuario</th>
+                        <th>Rol</th>
+                        <th>Estado</th>
+                        <th>Fecha de aceptación</th>
+                        <th>IP</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in resumen %}
+                    <tr>
+                        <td class="ps-3"><span class="fw-semibold">{{ r.user.nombre }}</span><br><span class="small text-muted">@{{ r.user.username }}</span></td>
+                        <td class="small">{{ 'Admin' if r.user.rol == 'admin' else 'Docente' }}</td>
+                        <td>
+                            {% if r.completo %}<span class="badge text-bg-success"><i class="bi bi-check-circle me-1"></i>Aceptado</span>
+                            {% else %}<span class="badge text-bg-warning"><i class="bi bi-hourglass-split me-1"></i>Pendiente</span>{% endif %}
+                        </td>
+                        <td class="small">{{ r.fecha.strftime('%d/%m/%Y %H:%M') if r.fecha and r.completo else '—' }}</td>
+                        <td class="small mono">{{ r.ip if r.completo and r.ip else '—' }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="5" class="text-center text-muted py-4">No hay usuarios pendientes.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header bg-white py-3">
+            <h6 class="mb-0 fw-bold"><i class="bi bi-journal-check me-2"></i>Historial de constancias (todas las versiones)</h6>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="bg-light">
+                    <tr class="small text-muted text-uppercase">
+                        <th class="ps-3">Fecha</th>
+                        <th>Usuario</th>
+                        <th>Documento</th>
+                        <th>Versión</th>
+                        <th>IP</th>
+                        <th>Navegador</th>
+                        <th>Hash SHA-256</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for a in historial.items %}
+                    <tr class="small">
+                        <td class="ps-3">{{ a.fecha.strftime('%d/%m/%Y %H:%M:%S') }}</td>
+                        <td>{{ a.nombre }} <span class="text-muted">@{{ a.username }}</span></td>
+                        <td>{{ documentos.get(a.documento, a.documento) }}</td>
+                        <td>{{ a.version }}</td>
+                        <td class="mono">{{ a.ip or '—' }}</td>
+                        <td class="text-truncate" style="max-width: 220px;" title="{{ a.user_agent }}">{{ a.user_agent or '—' }}</td>
+                        <td class="mono" title="{{ a.hash_documento }}">{{ a.hash_documento[:12] }}…</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="7" class="text-center text-muted py-4">Aún no hay constancias registradas.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% if historial.pages > 1 %}
+        <div class="card-footer bg-white">
+            <nav aria-label="Paginación"><ul class="pagination pagination-sm justify-content-center mb-0 flex-wrap">
+                {% for p in historial.iter_pages() %}
+                    {% if p %}<li class="page-item {{ 'active' if p == historial.page }}"><a class="page-link" href="{{ url_for('admin_aceptaciones', page=p, estado=request.args.get('estado')) }}">{{ p }}</a></li>
+                    {% else %}<li class="page-item disabled"><span class="page-link">…</span></li>{% endif %}
+                {% endfor %}
+            </ul></nav>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

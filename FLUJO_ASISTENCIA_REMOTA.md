@@ -33,7 +33,8 @@ La función `asistencia_remota_permitida()` evalúa estas reglas en hora de Ecua
 3. Cada fotograma se acepta solo si hay **un único rostro**, con confianza ≥ 0,6 y de tamaño adecuado (ocupa entre el 22 % y el 75 % del ancho). Si no, se indica qué corregir: acercarse, alejarse, mejorar la luz o que aparezca una sola persona.
 4. Con **12 capturas válidas** se promedian los descriptores (128 valores) y se envían a `POST /docente/registrar_rostro` como JSON, con la cabecera `X-CSRFToken`.
 5. El servidor exige exactamente 128 números finitos y guarda el descriptor en `usuarios.face_descriptor`.
-6. **Un docente no puede reemplazar su rostro.** Si necesita cambiarlo, el administrador lo restablece desde **Editar docente → Restablecer Rostro** (`POST /admin/docente/<id>/restablecer_rostro`) y el docente lo registra de nuevo. El botón **Cancelar** detiene la cámara durante el registro.
+6. **Cámara frontal o trasera:** el botón ⟳ sobre la imagen cambia de cámara (solo aparece si el teléfono tiene más de una). Con la trasera, otra persona puede sostener el teléfono y enfocar el rostro del docente. La vista se muestra en espejo solo con la frontal.
+7. **Un docente no puede reemplazar su rostro.** Si necesita cambiarlo, el administrador lo restablece desde **Editar docente → Restablecer Rostro** (`POST /admin/docente/<id>/restablecer_rostro`) y el docente lo registra de nuevo. El botón **Cancelar** detiene la cámara durante el registro.
 
 ---
 
@@ -47,7 +48,7 @@ La marcación ocurre en un modal que se abre con **Marcar Asistencia Remota** (s
 ### 3.2. Verificación facial (si `requiere_face_id`)
 1. Al abrir el modal (a pantalla completa en celulares) se encienden el GPS y la cámara frontal; al cerrarlo de cualquier forma, la cámara se apaga.
 2. Se aplican los mismos criterios de calidad que en el registro y se toman **3 capturas válidas**, cuyo promedio se guarda en el campo oculto `live_face_descriptor`.
-3. Si la cámara o los modelos fallan, se muestra el motivo y un botón **Reintentar**.
+3. Si la cámara o los modelos fallan, se muestra el motivo y un botón **Reintentar**. El botón ⟳ permite cambiar entre cámara frontal y trasera.
 4. La decisión final la toma el servidor (§4.3), no el navegador.
 
 ### 3.3. Datos del formulario
@@ -58,7 +59,9 @@ La marcación ocurre en un modal que se abre con **Marcar Asistencia Remota** (s
 | `latitud`, `longitud` | ocultos | Sí |
 | `live_face_descriptor` | oculto | Solo con Face ID |
 | `descripcion` | texto | No |
-| `foto` | archivo (`accept="image/*" capture="environment"`) | No |
+| `foto` | archivo JPG/PNG/WEBP: tomado con **Tomar foto** o elegido con **Subir archivo** | No |
+
+**Foto de evidencia:** «Tomar foto» abre una cámara dentro de la página (trasera por defecto, con botón ⟳ para cambiar a la frontal y un disparador). La foto se convierte a JPEG y se asigna al campo `foto` (con `DataTransfer`), mostrando una vista previa con opciones *Repetir* y *Quitar*. Como el teléfono solo puede usar una cámara a la vez, si la verificación facial está en curso se pausa y se reanuda al cerrar la cámara de evidencia. «Subir archivo» queda como alternativa para navegadores que no permitan la captura.
 
 El formulario se envía por `POST` a `/docente/marcar_web` con `enctype="multipart/form-data"`.
 

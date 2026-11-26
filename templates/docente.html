@@ -27,6 +27,9 @@
                             <video id="verify-video-feed" autoplay muted playsinline></video>
                             <canvas id="verify-video-canvas"></canvas>
                             <div class="face-guide"></div>
+                            <button type="button" class="camera-switch d-none" id="btnSwitchVerify" onclick="switchVerifyCamera()" title="Cambiar a cámara trasera" aria-label="Cambiar entre cámara frontal y trasera">
+                                <i class="bi bi-arrow-repeat"></i>
+                            </button>
                             <div id="verify-face-loading" class="face-overlay">
                                 <div class="spinner-border text-light mb-2" role="status"></div>
                                 <span class="text-light small fw-bold" id="verify-loading-text">Cargando IA...</span>
@@ -45,8 +48,43 @@
                     </div>
 
                     <div>
-                        <label for="foto" class="form-label fw-bold small">Evidencia fotográfica (opcional)</label>
-                        <input class="form-control" type="file" id="foto" name="foto" accept="image/jpeg,image/png,image/webp" capture="environment">
+                        <span class="form-label fw-bold small d-block">Evidencia fotográfica (opcional)</span>
+                        <div class="d-flex flex-wrap gap-2" id="evidencia-botones">
+                            <button type="button" class="btn btn-outline-primary btn-sm rounded-pill px-3" onclick="abrirCamaraEvidencia()">
+                                <i class="bi bi-camera-fill me-1"></i>Tomar foto
+                            </button>
+                            <label for="foto" class="btn btn-outline-secondary btn-sm rounded-pill px-3 mb-0">
+                                <i class="bi bi-upload me-1"></i>Subir archivo
+                            </label>
+                        </div>
+                        <input class="d-none" type="file" id="foto" name="foto" accept="image/jpeg,image/png,image/webp">
+
+                        <!-- Cámara de evidencia: trasera por defecto, se puede cambiar a frontal -->
+                        <div id="evidencia-camara" class="face-camera mt-2 d-none" style="max-width: 340px; border-color: #0d6efd;">
+                            <video id="evidencia-video" autoplay muted playsinline></video>
+                            <button type="button" class="camera-switch d-none" id="btnSwitchEvidencia" onclick="cambiarCamaraEvidencia()" title="Cambiar a cámara frontal" aria-label="Cambiar entre cámara frontal y trasera">
+                                <i class="bi bi-arrow-repeat"></i>
+                            </button>
+                            <div id="evidencia-loading" class="face-overlay">
+                                <div class="spinner-border text-light mb-2" role="status"></div>
+                                <span class="text-light small fw-bold">Iniciando cámara...</span>
+                            </div>
+                            <div class="camera-actions">
+                                <button type="button" class="btn-round-dark" onclick="cerrarCamaraEvidencia()" aria-label="Cerrar cámara"><i class="bi bi-x-lg"></i></button>
+                                <button type="button" class="btn-shutter" id="btnDisparo" onclick="capturarEvidencia()" aria-label="Tomar foto"></button>
+                                <span style="width: 46px;"></span>
+                            </div>
+                        </div>
+
+                        <div id="evidencia-preview" class="evidence-preview mt-2 d-none">
+                            <img id="evidencia-img" alt="Vista previa de la evidencia" class="d-block mb-2">
+                            <div class="d-flex flex-wrap gap-2 align-items-center">
+                                <span class="small text-success fw-semibold"><i class="bi bi-check-circle-fill me-1"></i><span id="evidencia-nombre">Foto lista</span></span>
+                                <button type="button" class="btn btn-link btn-sm p-0" onclick="abrirCamaraEvidencia()">Repetir</button>
+                                <button type="button" class="btn btn-link btn-sm p-0 text-danger" onclick="quitarEvidencia()">Quitar</button>
+                            </div>
+                        </div>
+                        <div id="evidencia-error" class="alert alert-danger small py-2 mt-2 d-none" role="alert"></div>
                         <div class="form-text">JPG, PNG o WEBP, máximo 16 MB.</div>
                     </div>
                 </div>
@@ -144,9 +182,7 @@
     </div>
 </div>
 
-{% if requiere_face_id %}
-<script src="{{ url_for('static', filename='js/face-utils.js') }}?v=2"></script>
-{% endif %}
+<script src="{{ url_for('static', filename='js/face-utils.js') }}?v=3"></script>
 
 <script>
 const REQUIERE_FACE_ID = {{ 'true' if requiere_face_id else 'false' }};
@@ -156,11 +192,14 @@ let faceOk = !REQUIERE_FACE_ID;
 let verifyStream = null;
 let stopDetection = null;
 let muestras = [];
+let verifyFacing = 'user';
+let evidStream = null;
+let evidFacing = 'environment';
 
 const modalEl = document.getElementById('modalMarcarAsistencia');
 // Iniciar al abrir el modal y apagar la cámara al cerrarlo (botón, fondo o tecla Atrás)
 modalEl.addEventListener('shown.bs.modal', iniciarMarcacion);
-modalEl.addEventListener('hidden.bs.modal', stopFaceVideo);
+modalEl.addEventListener('hidden.bs.modal', () => { stopFaceVideo(); cerrarCamaraEvidencia(false); });
 window.addEventListener('pagehide', stopFaceVideo);
 
 document.getElementById('formMarcarAsistencia').addEventListener('submit', (e) => {
@@ -236,10 +275,15 @@ async function startFaceVerification() {
         await FaceUtils.loadModels();
         if (!modalEl.classList.contains('show')) return; // se cerró mientras cargaba
         document.getElementById('verify-loading-text').innerText = 'Iniciando cámara...';
+        if (evidStream) {   // solo una cámara a la vez: se reanuda al cerrar la de evidencia
+            document.getElementById('verify-face-loading').classList.add('d-none');
+            setVerify('Verificación pausada mientras toma la foto. Se reanudará al terminar.', 'warning');
+            return;
+        }
         verifyStream = await FaceUtils.startCamera(
             document.getElementById('verify-video-feed'),
             document.getElementById('verify-video-canvas'),
-            document.getElementById('verify-video-container'));
+            document.getElementById('verify-video-container'), verifyFacing);
     } catch (e) {
         document.getElementById('verify-face-loading').classList.add('d-none');
         setVerify(e.message, 'danger');
@@ -250,6 +294,8 @@ async function startFaceVerification() {
 
     document.getElementById('verify-face-loading').classList.add('d-none');
     setVerify('Mire de frente a la cámara.', 'warning');
+    actualizarSwitch('btnSwitchVerify', verifyStream);
+    document.getElementById('btnSwitchVerify').classList.toggle('d-none', !(await FaceUtils.hasMultipleCameras()));
     const video = document.getElementById('verify-video-feed');
     const canvas = document.getElementById('verify-video-canvas');
 
@@ -270,6 +316,121 @@ async function startFaceVerification() {
         }
     });
 }
+
+function actualizarSwitch(id, stream) {
+    const trasera = stream && stream.facing === 'environment';
+    document.getElementById(id).title = trasera ? 'Cambiar a cámara frontal' : 'Cambiar a cámara trasera';
+}
+
+async function switchVerifyCamera() {
+    if (!verifyStream || faceOk) return;
+    const btn = document.getElementById('btnSwitchVerify');
+    btn.disabled = true;
+    verifyFacing = verifyStream.facing === 'environment' ? 'user' : 'environment';
+    FaceUtils.stopStream(verifyStream);
+    try {
+        verifyStream = await FaceUtils.startCamera(
+            document.getElementById('verify-video-feed'),
+            document.getElementById('verify-video-canvas'),
+            document.getElementById('verify-video-container'), verifyFacing);
+        actualizarSwitch('btnSwitchVerify', verifyStream);
+    } catch (e) {
+        stopFaceVideo();
+        setVerify(e.message, 'danger');
+        document.getElementById('btnRetryFace').classList.remove('d-none');
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+/* ---------- Foto de evidencia con cámara propia ---------- */
+function errorEvidencia(msg) {
+    const el = document.getElementById('evidencia-error');
+    el.textContent = msg || '';
+    el.classList.toggle('d-none', !msg);
+}
+
+async function abrirCamaraEvidencia() {
+    errorEvidencia('');
+    // Si la verificación facial está en curso, se pausa para liberar la cámara
+    if (verifyStream) {
+        stopFaceVideo();
+        if (REQUIERE_FACE_ID && !faceOk) {
+            setVerify('Verificación pausada mientras toma la foto. Se reanudará al terminar.', 'warning');
+        }
+    }
+    const cont = document.getElementById('evidencia-camara');
+    cont.classList.remove('d-none');
+    document.getElementById('evidencia-loading').classList.remove('d-none');
+    document.getElementById('evidencia-preview').classList.add('d-none');
+    try {
+        FaceUtils.stopStream(evidStream);
+        evidStream = await FaceUtils.startCamera(document.getElementById('evidencia-video'), null, cont, evidFacing);
+    } catch (e) {
+        cont.classList.add('d-none');
+        errorEvidencia(e.message + ' Puede usar «Subir archivo».');
+        reanudarVerificacion();
+        return;
+    }
+    document.getElementById('evidencia-loading').classList.add('d-none');
+    actualizarSwitch('btnSwitchEvidencia', evidStream);
+    document.getElementById('btnSwitchEvidencia').classList.toggle('d-none', !(await FaceUtils.hasMultipleCameras()));
+    cont.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+async function cambiarCamaraEvidencia() {
+    if (!evidStream) return;
+    evidFacing = evidStream.facing === 'environment' ? 'user' : 'environment';
+    await abrirCamaraEvidencia();
+}
+
+async function capturarEvidencia() {
+    const video = document.getElementById('evidencia-video');
+    if (!evidStream || !video.videoWidth) return;
+    try {
+        const file = await FaceUtils.captureFile(video);
+        const dt = new DataTransfer();          // asigna la foto al campo "foto" del formulario
+        dt.items.add(file);
+        document.getElementById('foto').files = dt.files;
+        mostrarPreview(file);
+    } catch (e) {
+        errorEvidencia('Este navegador no permite adjuntar la foto tomada. Use «Subir archivo».');
+    }
+    cerrarCamaraEvidencia();
+}
+
+function mostrarPreview(file) {
+    const img = document.getElementById('evidencia-img');
+    if (img.dataset.url) URL.revokeObjectURL(img.dataset.url);
+    img.dataset.url = URL.createObjectURL(file);
+    img.src = img.dataset.url;
+    document.getElementById('evidencia-nombre').textContent = 'Foto lista (' + Math.round(file.size / 1024) + ' KB)';
+    document.getElementById('evidencia-preview').classList.remove('d-none');
+}
+
+function quitarEvidencia() {
+    document.getElementById('foto').value = '';
+    document.getElementById('evidencia-preview').classList.add('d-none');
+}
+
+function cerrarCamaraEvidencia(reanudar) {
+    const abierta = !!evidStream;
+    if (window.FaceUtils) FaceUtils.stopStream(evidStream);
+    evidStream = null;
+    document.getElementById('evidencia-camara').classList.add('d-none');
+    if (abierta && reanudar !== false) reanudarVerificacion();
+}
+
+function reanudarVerificacion() {
+    if (REQUIERE_FACE_ID && !faceOk && modalEl.classList.contains('show') && !verifyStream) startFaceVerification();
+}
+
+// Vista previa también cuando se elige un archivo
+document.getElementById('foto').addEventListener('change', e => {
+    errorEvidencia('');
+    const f = e.target.files[0];
+    if (f) mostrarPreview(f); else quitarEvidencia();
+});
 
 function stopFaceVideo() {
     if (stopDetection) { stopDetection(); stopDetection = null; }

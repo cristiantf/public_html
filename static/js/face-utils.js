@@ -58,19 +58,35 @@
         }
     }
 
-    /** Enciende la cámara frontal en el <video> y ajusta el contenedor a su proporción real. */
-    async function startCamera(video, canvas, container) {
+    /**
+     * Enciende una cámara en el <video> y ajusta el contenedor a su proporción real.
+     * facing: 'user' (frontal, por defecto) o 'environment' (trasera).
+     * La vista se muestra en espejo solo con la cámara frontal.
+     */
+    async function startCamera(video, canvas, container, facing) {
+        facing = facing || 'user';
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
             throw new Error('Este navegador no permite usar la cámara. Use Chrome o Safari actualizados y acceda por https.');
         }
+        const pedir = (modo) => navigator.mediaDevices.getUserMedia({
+            audio: false,
+            video: { facingMode: modo, width: { ideal: 1280 }, height: { ideal: 720 } }
+        });
         let stream;
         try {
-            stream = await navigator.mediaDevices.getUserMedia({
-                audio: false,
-                video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }
-            });
+            stream = await pedir({ ideal: facing });
         } catch (err) {
             throw new Error(cameraErrorMessage(err));
+        }
+        // Algunos teléfonos ignoran la preferencia: si entregaron la otra cámara, pedirla de forma estricta
+        const obtenida = (stream.getVideoTracks()[0].getSettings ? stream.getVideoTracks()[0].getSettings() : {}).facingMode;
+        if (obtenida && obtenida !== facing) {
+            stopStream(stream);
+            try {
+                stream = await pedir({ exact: facing });
+            } catch (err) {
+                stream = await pedir({ ideal: facing }).catch(e => { throw new Error(cameraErrorMessage(e)); });
+            }
         }
         video.srcObject = stream;
         video.setAttribute('playsinline', '');
@@ -83,10 +99,38 @@
 
         const w = video.videoWidth || 640;
         const h = video.videoHeight || 480;
-        canvas.width = w;
-        canvas.height = h;
-        if (container) container.style.aspectRatio = w + ' / ' + h;
+        if (canvas) { canvas.width = w; canvas.height = h; }
+        // Cámara realmente obtenida (en computadoras suele no informarse: se asume frontal)
+        const settings = stream.getVideoTracks()[0].getSettings ? stream.getVideoTracks()[0].getSettings() : {};
+        const actual = settings.facingMode || facing;
+        if (container) {
+            container.style.aspectRatio = w + ' / ' + h;
+            container.classList.toggle('mirror', actual !== 'environment');
+        }
+        stream.facing = actual;
         return stream;
+    }
+
+    /** true si el dispositivo tiene más de una cámara (llamar después de obtener permiso). */
+    async function hasMultipleCameras() {
+        try {
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            return devices.filter(d => d.kind === 'videoinput').length > 1;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    /** Toma una foto del video (sin espejo) y la devuelve como File JPEG. */
+    function captureFile(video, nombre) {
+        const c = document.createElement('canvas');
+        c.width = video.videoWidth;
+        c.height = video.videoHeight;
+        c.getContext('2d').drawImage(video, 0, 0, c.width, c.height);
+        return new Promise((resolve, reject) => c.toBlob(blob => {
+            if (!blob) return reject(new Error('No se pudo capturar la foto.'));
+            resolve(new File([blob], nombre || ('evidencia_' + Date.now() + '.jpg'), { type: 'image/jpeg', lastModified: Date.now() }));
+        }, 'image/jpeg', 0.85));
     }
 
     function stopStream(stream) {
@@ -158,5 +202,5 @@
         return m ? m.content : '';
     }
 
-    window.FaceUtils = { loadModels, startCamera, stopStream, detectLoop, evaluate, draw, average, csrfToken };
+    window.FaceUtils = { loadModels, startCamera, stopStream, detectLoop, evaluate, draw, average, csrfToken, hasMultipleCameras, captureFile };
 })(window);

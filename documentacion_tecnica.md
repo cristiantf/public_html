@@ -26,6 +26,7 @@ Hikvision DS-K1T8003EF ──ISAPI/Digest──▶ NodeMCU ESP8266 ──HTTPS�
 | `Log` (`logs`) | `fecha` (naive, hora Ecuador), `usuario_id` (= `biometric_id`), `tipo_evento`, `origen`, `latitud`, `longitud`, `descripcion`, `foto_path` | `tipo_evento`: `Asistencia + puerta`, `Asistencia` o `Apertura Remota`. `origen`: `Huella`, `Asistencia remota` o `Panel Control`. |
 | `Comando` (`comandos`) | `instruccion`, `estado` (`PENDIENTE`/`ENVIADO`/`EXPIRADO`), `creado` | `creado` se agrega automáticamente al iniciar la app si no existe. |
 | `Permiso` (`permisos`) | `user_id` (FK `usuarios.id`), `fecha_permiso`, `observacion` | Se muestran en el reporte matricial. |
+| `AceptacionLegal` (`aceptaciones_legales`) | `user_id`, `username`, `nombre`, `biometric_id`, `documento`, `version`, `hash_documento` (SHA-256), `fecha`, `ip`, `user_agent` | Constancia de aceptación de cada documento legal. Copia los datos del usuario (sin clave foránea) para conservarse aunque se elimine al usuario. |
 | `ConfigSistema` (`config_sistema`) | `asistencia_remota_activa`, `requiere_face_id`, `ar_fecha_inicio/fin`, `ar_hora_inicio/fin` | Tabla de una sola fila. |
 
 Todas las fechas se guardan sin zona horaria, en hora de Ecuador (`America/Guayaquil`).
@@ -96,6 +97,9 @@ Todas requieren sesión iniciada salvo `/login`. Las marcadas **admin** redirige
 | `/perfil`, `/actualizar_password` | GET, POST | todos | Perfil, cambio de contraseña y registro de rostro |
 | `/docente/registrar_rostro` | POST (JSON) | todos | Guarda el descriptor facial (solo si no hay uno; el admin puede re-registrar el suyo) |
 | `/uploads/<archivo>` | GET | admin, o docente dueño | Evidencias fotográficas |
+| `/legal/<doc>` | GET | público | Lectura de `terminos`, `politica_uso` o `datos_personales` |
+| `/legal/aceptacion` | GET/POST | todos | Aceptación obligatoria de la versión vigente (o rechazo, que cierra la sesión) |
+| `/admin/aceptaciones` | GET | admin | Estado de aceptación por usuario e historial de constancias |
 
 ---
 
@@ -110,6 +114,7 @@ Todas requieren sesión iniciada salvo `/login`. Las marcadas **admin** redirige
 | Caducidad de comandos | 60 s (`COMANDO_TTL_SEGUNDOS`): un `ABRIR` enviado con el hardware desconectado no abre la puerta más tarde. El admin recibe un aviso si el hardware está offline. |
 | Archivos subidos | Solo `.jpg`, `.jpeg`, `.png`, `.webp`, verificados con Pillow; máximo 16 MB (`MAX_CONTENT_LENGTH`). Cada docente solo accede a sus evidencias; los archivos que no son imagen se sirven como descarga. |
 | Face ID | El servidor exige descriptores de exactamente 128 números y compara con distancia euclidiana (umbral 0,55). El docente no puede reemplazar su rostro: lo restablece el admin. |
+| Aceptación legal (LOPDP) | Tras iniciar sesión, `exigir_aceptacion_legal()` redirige a `/legal/aceptacion` hasta que el usuario acepte los tres documentos de la versión vigente (`LEGAL_VERSION`). Cada aceptación guarda fecha, IP real (`X-Real-IP` detrás de Nginx), navegador y el SHA-256 del texto aceptado. |
 | Contraseñas | Hash pbkdf2:sha256 (Werkzeug). La contraseña del admin inicial sale de `ADMIN_INITIAL_PASSWORD` o se genera al azar. |
 | Consumo de memoria | Paginación y `LIMIT` en las consultas; reporte matricial limitado a un año. |
 
@@ -127,6 +132,8 @@ Todas requieren sesión iniciada salvo `/login`. Las marcadas **admin** redirige
 | `TOKEN_NODE` | Sí | Token compartido con el firmware. |
 | `EXIGIR_TOKEN_HARDWARE` | No (`false`) | `true` exige `X-Token` en la API de polling. Activar solo con el firmware que lo envía. |
 | `ADMIN_INITIAL_PASSWORD` | No | Contraseña del admin al crearlo por primera vez. |
+| `LEGAL_INSTITUCION` | No (Instituto Superior Tecnológico Alberto Enríquez) | Responsable del tratamiento que aparece en los documentos legales. |
+| `LEGAL_CONTACTO` | No (la Secretaría General del Instituto) | Canal para ejercer derechos de datos personales (por ejemplo, un correo institucional). |
 | `HIKVISION_USER`, `HIKVISION_PASS` | No | Referencia para flashear el firmware (la app no las usa). |
 
 Las variables de entorno del sistema tienen prioridad sobre el archivo. Si falta una obligatoria, la app no arranca y el error indica cuál.
@@ -156,7 +163,13 @@ Las variables de entorno del sistema tienen prioridad sobre el archivo. Si falta
 ### 7.4. Reporte matricial
 Por docente y día muestra la primera y última marcación de la mañana y de la tarde (rangos configurables), con prefijo `(H)` huella o `(W)` web, y `PERMISO: <observación>` cuando hay un permiso registrado.
 
-### 7.5. Paginación
+### 7.5. Documentos legales y constancias
+1. Los textos están en `templates/legal/` (`terminos.html`, `politica_uso.html`, `datos_personales.html`) y usan `institucion`, `contacto` y `dominio`.
+2. Al iniciar sesión, si el usuario no tiene las tres constancias de `LEGAL_VERSION`, solo puede ver `/legal/aceptacion`; las llamadas JSON responden `403`.
+3. Al aceptar se crean tres filas en `aceptaciones_legales`. Si rechaza, se cierra la sesión (la marcación presencial con huella no se ve afectada).
+4. **Para publicar cambios en un texto:** edite la plantilla y suba `LEGAL_VERSION` (y `LEGAL_FECHA_VIGENCIA`) en `app.py`; todos deberán aceptar de nuevo. Cambiar el texto sin subir la versión hace que el hash guardado no coincida con el texto mostrado.
+
+### 7.6. Paginación
 `gestion_asistencia` (30 por página) y `gestion_permisos` (20 por página) usan `.paginate()`; los filtros de fecha inválidos se ignoran en lugar de producir error.
 
 ---
