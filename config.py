@@ -14,3 +14,7 @@ SQLALCHEMY_DATABASE_URI = f'mysql+pymysql://user1_istae:{password}@localhost/use
 # Este token es obligatorio en cada petición POST del NodeMCU
 # Evita que dispositivos externos registren asistencias falsas
 TOKEN_NODE = 'istae1805A'
+
+# Exigir token (cabecera X-Token) en /api/sincronizar y /api/check_comando.
+# Cambiar a True SOLO después de flashear el firmware que envía X-Token.
+EXIGIR_TOKEN_HARDWARE = False

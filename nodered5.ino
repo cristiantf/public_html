@@ -345,6 +345,7 @@ void sincronizarListaBlanca() {
   WiFiClientSecure client; client.setInsecure();
   HTTPClient http;
   if (http.begin(client, String(HOST_URL) + "/api/sincronizar")) {
+    http.addHeader("X-Token", TOKEN_NODE);
     if (http.GET() == 200) {
       listaBlanca = http.getString();
       Serial.printf("☁️ Lista blanca actualizada: [%s]\n", listaBlanca.c_str());
@@ -358,6 +359,7 @@ void revisarComandosNube() {
   WiFiClientSecure client; client.setInsecure();
   HTTPClient http;
   if (http.begin(client, String(HOST_URL) + "/api/check_comando")) {
+    http.addHeader("X-Token", TOKEN_NODE);
     if (http.GET() == 200) {
       String resp = http.getString();
 

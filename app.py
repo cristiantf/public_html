@@ -16,6 +16,18 @@ import json
 app = Flask(__name__)
 app.config['SECRET_KEY'] = config.SECRET_KEY
 app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
+# Límite de tamaño por petición (fotos de evidencia tomadas con el celular)
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
+EXTENSIONES_IMAGEN = {'.jpg', '.jpeg', '.png', '.webp'}
+
+# Tiempo máximo que un comando (ABRIR, SET_TIME) puede esperar en la cola.
+# Evita que un ABRIR enviado con el hardware offline abra la puerta horas después.
+COMANDO_TTL_SEGUNDOS = 60
+
+# Exigir token en /api/sincronizar y /api/check_comando.
+# Activar (EXIGIR_TOKEN_HARDWARE = True en config.py) SOLO después de flashear
+# el firmware que envía la cabecera X-Token; si no, el NodeMCU deja de recibir comandos.
+EXIGIR_TOKEN_HARDWARE = getattr(config, 'EXIGIR_TOKEN_HARDWARE', False)
 
 # --- CONFIGURACIÓN DE BASE DE DATOS (MYSQL) ---
 app.config['SQLALCHEMY_DATABASE_URI'] = config.SQLALCHEMY_DATABASE_URI
@@ -55,6 +67,10 @@ class Comando(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     instruccion = db.Column(db.String(100))
     estado = db.Column(db.String(20), default='PENDIENTE')
+    creado = db.Column(
+        db.DateTime, nullable=True,
+        default=lambda: datetime.now(pytz.timezone('America/Guayaquil')).replace(tzinfo=None)
+    )
 
 class Permiso(db.Model):
     __tablename__ = 'permisos'
@@ -83,6 +99,15 @@ def load_user(user_id):
 def init_db():
     with app.app_context():
         db.create_all()
+        # Migración ligera: create_all() no agrega columnas a tablas existentes
+        columnas = {c['name'] for c in db.inspect(db.engine).get_columns('comandos')}
+        if 'creado' not in columnas:
+            try:
+                with db.engine.begin() as conn:
+                    conn.execute(db.text('ALTER TABLE comandos ADD COLUMN creado DATETIME NULL'))
+            except Exception as e:
+                # Con varios workers de Gunicorn, otro proceso pudo agregarla primero
+                print(f"[init_db] Columna comandos.creado no agregada: {e}")
         # Crear carpeta de uploads si no existe
         if not os.path.exists(app.config['UPLOAD_FOLDER']):
             os.makedirs(app.config['UPLOAD_FOLDER'])
@@ -159,9 +184,27 @@ def get_hardware_status():
         pass
     return False
 
+def token_hardware_valido():
+    """Token del NodeMCU en la cabecera X-Token (o ?token= como alternativa)."""
+    if not EXIGIR_TOKEN_HARDWARE:
+        return True
+    token = request.headers.get('X-Token') or request.args.get('token')
+    return token == config.TOKEN_NODE
+
+def expirar_comandos():
+    """Marca como EXPIRADO todo comando pendiente más viejo que COMANDO_TTL_SEGUNDOS."""
+    limite = datetime.now(pytz.timezone('America/Guayaquil')).replace(tzinfo=None) - timedelta(seconds=COMANDO_TTL_SEGUNDOS)
+    Comando.query.filter(
+        Comando.estado == 'PENDIENTE',
+        db.or_(Comando.creado.is_(None), Comando.creado < limite)
+    ).update({'estado': 'EXPIRADO'}, synchronize_session=False)
+    db.session.commit()
+
 # --- API PARA HARDWARE (IOT) ---
 @app.route('/api/sincronizar')
 def api_sincronizar():
+    if not token_hardware_valido():
+        return "Token inválido", 403
     update_hardware_seen()
     usuarios = User.query.filter_by(acceso_puerta=1).all()
     return ",".join([str(u.biometric_id) for u in usuarios])
@@ -214,7 +257,10 @@ def api_recibir_log():
 
 @app.route('/api/check_comando')
 def api_check_comando():
+    if not token_hardware_valido():
+        return "Token inválido", 403
     update_hardware_seen()
+    expirar_comandos()
     # Obtener el comando pendiente más antiguo de manera secuencial
     cmd = Comando.query.filter_by(estado='PENDIENTE').order_by(Comando.id.asc()).first()
     if cmd:
@@ -279,10 +325,34 @@ def registrar_rostro():
     return jsonify({"status": "success"})
 
 # --- RUTA PARA SERVIR EVIDENCIAS ---
+def es_imagen_valida(archivo):
+    """Comprueba con Pillow que el contenido sea realmente una imagen."""
+    from PIL import Image
+    try:
+        Image.open(archivo.stream).verify()
+        return True
+    except Exception:
+        return False
+    finally:
+        archivo.stream.seek(0)
+
+@app.errorhandler(413)
+def archivo_demasiado_grande(e):
+    flash(f"El archivo supera el límite de {app.config['MAX_CONTENT_LENGTH'] // (1024 * 1024)} MB.", 'danger')
+    return redirect(url_for('index'))
+
 @app.route('/uploads/<filename>')
 @login_required
 def uploaded_file(filename):
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+    # El docente solo puede ver sus propias evidencias (prefijo "<user_id>_")
+    if current_user.rol != 'admin' and not filename.startswith(f"{current_user.id}_"):
+        return "No autorizado", 403
+    ext = os.path.splitext(filename)[1].lower()
+    # Cualquier archivo que no sea imagen se descarga en vez de mostrarse en el navegador
+    return send_from_directory(
+        app.config['UPLOAD_FOLDER'], filename,
+        as_attachment=ext not in EXTENSIONES_IMAGEN
+    )
 
 # --- ACCIONES ---
 @app.route('/admin/abrir')
@@ -298,7 +368,10 @@ def admin_abrir():
         origen="Panel Control"
     ))
     db.session.commit()
-    flash('Comando de apertura enviado.', 'danger')
+    if get_hardware_status():
+        flash('Comando de apertura enviado.', 'danger')
+    else:
+        flash(f'El hardware está offline: si no se conecta en {COMANDO_TTL_SEGUNDOS} s, el comando de apertura se descartará.', 'warning')
     return redirect(url_for('admin_dashboard'))
 
 @app.route('/admin/sincronizar_hora', methods=['GET', 'POST'])
@@ -435,8 +508,12 @@ def docente_marcar():
 
         filename = None
         if foto and foto.filename != '':
-            ext = os.path.splitext(secure_filename(foto.filename))[1]
-            filename = f"{current_user.id}_{datetime.now().strftime('%Y%m%d%H%M%S')}{ext}"
+            ext = os.path.splitext(secure_filename(foto.filename))[1].lower()
+            if ext not in EXTENSIONES_IMAGEN or not es_imagen_valida(foto):
+                flash('La evidencia debe ser una imagen JPG, PNG o WEBP.', 'danger')
+                return redirect(url_for('docente_dashboard'))
+            ahora_ecu = datetime.now(pytz.timezone('America/Guayaquil'))
+            filename = f"{current_user.id}_{ahora_ecu.strftime('%Y%m%d%H%M%S')}{ext}"
             foto.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
 
         nuevo_log = Log(
@@ -956,6 +1033,7 @@ def get_logs_admin_json():
         }
         res.append(log_dict)
     
+    expirar_comandos()
     queue_len = Comando.query.filter_by(estado='PENDIENTE').count()
     
     tz_ecu = pytz.timezone('America/Guayaquil')
